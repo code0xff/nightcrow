@@ -6,6 +6,7 @@
 
 pub(crate) mod attach;
 pub(crate) mod bootstrap;
+pub(crate) mod draw_backend;
 pub(crate) mod event_loop;
 pub(crate) mod input;
 pub(crate) mod redraw;

@@ -30,7 +30,7 @@ Terminal programs may write to the clipboard through OSC 52; the text reaches th
 
 ## Access and security
 
-Configure the listener and credential in [`[web_viewer]`](configuration.md#web_viewer). The default is `127.0.0.1:8091` over plain HTTP. An authenticated viewer grants repository browsing and interactive shell access. For remote use, do not expose the port directly: tunnel it with SSH or put it behind a TLS reverse proxy.
+Configure the listener and credential in [`[web_viewer]`](configuration.md#web_viewer). The default is `127.0.0.1:8091` over plain HTTP. An authenticated viewer grants repository browsing and interactive shell access. For remote use, do not expose the port directly: tunnel it with SSH or put it behind a TLS reverse proxy. A proxy on the same machine that forwards its own host name, such as `tailscale serve`, needs that name in `allowed_hosts`; [Notifications](notifications.md#web-push) walks through the Tailscale setup, which push notifications also require.
 
 If no password or `hashed_password` is configured, the daemon generates a random password, saves it to `~/.nightcrow/config.toml`, and prints it once at startup. `hashed_password` accepts an Argon2 PHC string and takes precedence over `password`. Login attempts are rate-limited and issue an HTTP-only, SameSite cookie; logout revokes the server-side token. Tokens are persisted in `~/.nightcrow/sessions` and use the configured `session_ttl_hours` (`24` by default, `0` for no server-side expiry). See [Configuration](configuration.md#web_viewer) for limits and reload behavior.
 

@@ -1,0 +1,4 @@
+# The visual-test image (scripts/visual/Dockerfile) copies nothing from the
+# checkout, which is bind-mounted when the container runs. Sending the build
+# context would upload target/ and node_modules/ for nothing.
+*

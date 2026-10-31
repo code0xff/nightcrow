@@ -15,6 +15,7 @@ pub(super) struct CatalogRuntime {
     terminal: crate::config::TerminalConfig,
     shell: crate::config::ShellConfig,
     ownership: Arc<crate::session::size_owner::SizeOwnership>,
+    notices: Arc<crate::session::notice::Notices>,
     status_encoder: StatusEncoder,
 }
 
@@ -28,6 +29,7 @@ impl Default for CatalogRuntime {
             terminal: crate::config::TerminalConfig::default(),
             shell: crate::config::ShellConfig::default(),
             ownership: Arc::new(crate::session::size_owner::SizeOwnership::default()),
+            notices: Arc::default(),
             status_encoder: empty_status_payload,
         }
     }
@@ -65,13 +67,14 @@ impl CatalogRuntime {
                 name: repo_name(&member.path),
                 display_path: display_path(&member.path),
                 runtime: RepoRuntime::spawn(&member.path, self.status_encoder),
-                terminals: TerminalHub::spawn(
+                terminals: TerminalHub::spawn_with_notices(
                     &member.path,
                     self.startup_commands.clone(),
                     self.plugins.clone(),
                     self.terminal.auto_open,
                     self.shell.clone(),
                     Arc::clone(&self.ownership),
+                    Arc::clone(&self.notices),
                 ),
                 id: member.id,
                 path: member.path,
@@ -96,6 +99,10 @@ impl CatalogRuntime {
         self.terminal = terminal;
         self.plugins = plugins;
         Ok(self.entries.clone())
+    }
+
+    pub(super) fn notices(&self) -> Arc<crate::session::notice::Notices> {
+        Arc::clone(&self.notices)
     }
 
     pub(super) fn entries(&self) -> &[Arc<RepoEntry>] {

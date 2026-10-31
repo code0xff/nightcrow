@@ -58,7 +58,7 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
 
     // (1) Host, then Origin — both before anything reads state. Origin only
     // proves the two agree, which a DNS-rebound attacker controls outright.
-    if !conn::host_allowed(&head, state.bound_loopback) {
+    if !conn::host_allowed(&head, state.bound_loopback, &state.allowed_hosts) {
         let _ = stream.write_all(&text_response("403 Forbidden", "unexpected host"));
         return;
     }
@@ -222,6 +222,12 @@ fn handle_connection(mut stream: TcpStream, state: Arc<ViewerState>) {
 
     if head.method == "POST" && head.path == "/api/repos/order" {
         let _ = stream.write_all(&handle_reorder_repos(&body, &state));
+        return;
+    }
+
+    // Web Push subscriptions and the key a page subscribes with.
+    if head.path.starts_with("/api/push/") {
+        let _ = stream.write_all(&super::push_routes::handle(&head, &body, &state));
         return;
     }
 

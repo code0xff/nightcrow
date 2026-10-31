@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Terminal } from "@xterm/xterm";
 import type { PaneView } from "../../lib/terminal/terminalLayout";
 import {
@@ -7,6 +7,7 @@ import {
   queueReplayEnd,
   type PendingTerminalWrite,
 } from "../../lib/terminal/terminalReplay";
+import { toast } from "../../lib/runtime/toast";
 import { handleTerminalSocketMessage, type TerminalMessageContext } from "./terminalSocketMessages";
 
 const terminals: Terminal[] = [];
@@ -152,5 +153,19 @@ describe("terminal replay messages", () => {
     await write(term, "\x1b[6n");
 
     expect(sent).toEqual(["\x1b[1;1R"]);
+  });
+});
+
+describe("attention messages", () => {
+  it("says what the pane asked, or a plain line when it said nothing", () => {
+    const info = vi.spyOn(toast, "info").mockImplementation(() => 0);
+    const context = makeContext();
+    control(context, { type: "attention", pane: 2, message: "build done" });
+    control(context, { type: "attention", pane: 2 });
+    expect(info.mock.calls.map((call) => call[0])).toEqual([
+      "build done",
+      "A terminal wants your attention",
+    ]);
+    info.mockRestore();
   });
 });

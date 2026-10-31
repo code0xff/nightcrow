@@ -7,5 +7,6 @@ pub mod clone_jobs;
 pub mod dto;
 pub mod highlight;
 pub mod limits;
+pub mod push;
 pub mod server;
 pub(crate) mod status_payload;

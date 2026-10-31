@@ -131,9 +131,9 @@ export function ProjectStrip({
                 ? shortcut("project.close", "Close project")
                 : { title: "Close project" })}
               aria-label={`close ${r.name}`}
-              className="mr-1 flex h-5 w-5 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-removed"
+              className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-removed"
             >
-              <XIcon className="h-3.5 w-3.5" />
+              <XIcon />
             </button>
           </div>
         ))}
@@ -141,7 +141,7 @@ export function ProjectStrip({
       <button
         onClick={onOpenPicker}
         {...shortcut("project.openDialog", "Open a project")}
-        className={`hidden shrink-0 items-center gap-1 rounded-sm px-2 py-0.5 text-ink-400 hover:text-ink-200 md:inline-flex ${
+        className={`hidden shrink-0 items-center gap-1 rounded-sm px-2 py-0.5 text-ink-400 hover:text-accent md:inline-flex ${
           left ? "mx-1 my-2 justify-center" : ""
         }`}
       >

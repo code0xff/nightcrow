@@ -44,6 +44,30 @@ impl Catalog {
             .collect()
     }
 
+    /// The session's listeners for panes asking for attention.
+    pub fn notices(&self) -> Arc<crate::session::notice::Notices> {
+        self.runtime
+            .lock()
+            .expect("catalog runtime poisoned")
+            .notices()
+    }
+
+    /// Raise attention on the pane `token` names, in whichever repository
+    /// holds it. `false` when none does. The hubs are asked outside the
+    /// catalog lock, since each answer waits on that hub's worker.
+    pub fn notify(&self, token: &crate::backend::PaneToken, message: Option<String>) -> bool {
+        let hubs: Vec<_> = self
+            .runtime
+            .lock()
+            .expect("catalog runtime poisoned")
+            .entries()
+            .iter()
+            .map(|entry| Arc::clone(&entry.terminals))
+            .collect();
+        hubs.iter()
+            .any(|hub| hub.notify(token.clone(), message.clone()))
+    }
+
     /// The served list and, from that same snapshot, the id standing for
     /// `remembered` — one lock for both, because a client renders them together
     /// and a repository opened between two separate reads would yield an active

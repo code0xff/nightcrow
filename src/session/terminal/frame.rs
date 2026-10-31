@@ -195,11 +195,15 @@ pub enum ServerMessage {
     /// `Shared::recovery`), not as a state machine of its own. The one label
     /// the hub itself sends is
     /// [`RECOVERY_CANCELLED`](super::hub_recovery::RECOVERY_CANCELLED).
-    /// A plugin says this pane wants the person back. Carries no reason and no
-    /// text: the client turns it into that project tab's unread marker, which
-    /// says "something happened here" and nothing more.
+    /// A plugin, or a program in the pane through `nightcrow notify`, says
+    /// this pane wants the person back. The TUI turns it into that project
+    /// tab's unread marker; the browser shows `message` when there is one.
     Attention {
         pane: PaneId,
+        /// A short line the sender chose, absent when it gave none. Never
+        /// transcript text: the hub only relays what was handed to it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
     },
     Recovery {
         pane: PaneId,

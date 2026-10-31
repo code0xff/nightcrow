@@ -40,6 +40,10 @@ pub struct WebViewerConfig {
     /// of a re-login this surface is worth, and on a loopback-bound session
     /// there may be no one to re-authenticate against.
     pub session_ttl_hours: u64,
+    /// Host names a loopback-bound viewer answers to besides loopback ones:
+    /// the name a local HTTPS proxy forwards, such as `tailscale serve`'s
+    /// `machine.tailnet.ts.net`. Matched without the port, ignoring case.
+    pub allowed_hosts: Vec<String>,
 }
 
 impl Default for WebViewerConfig {
@@ -50,6 +54,7 @@ impl Default for WebViewerConfig {
             password: None,
             hashed_password: None,
             session_ttl_hours: DEFAULT_SESSION_TTL_HOURS,
+            allowed_hosts: Vec::new(),
         }
     }
 }

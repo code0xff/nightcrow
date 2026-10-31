@@ -60,7 +60,7 @@ impl SessionLink {
                 ServerMessage::Hello { .. } => {}
                 // A status connection closes before attachment, so this is not
                 // a response the long-lived session client can request.
-                ServerMessage::Status { .. } => {}
+                ServerMessage::Status { .. } | ServerMessage::Notified => {}
                 // Only a refusal reaches here. A pane created, exited, or
                 // reordered goes to that repository's backend.
                 ServerMessage::Terminal { repo, event } => {

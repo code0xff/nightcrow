@@ -70,6 +70,14 @@ Clone is delegated to the `git` binary, which supports credential helpers and SS
 
 Only one clone may run at a time, and a job outlives the request connection. Clients poll by job ID; a cleaned-up job ends with 404. The process uses `GIT_TERMINAL_PROMPT=0`, SSH liveness options, and an HTTP low-speed policy. These are limits that terminate a stalled transfer, not wall-clock deadlines guaranteeing completion.
 
+## Web Push
+
+`web::viewer::push` subscribes to the session's `Notices` and turns each notice into a Web Push message. The session does not know the listener exists: `PushService::follow` registers it, holding the session weakly because the session owns the listener list. Hub workers only queue; one `nightcrow-push` thread encrypts (RFC 8291 `aes128gcm`, to the browser's own key, so the push service relays ciphertext), signs a VAPID token (RFC 8292, ES256) and posts with `ureq`, https only. A burst past the 64-entry queue is dropped rather than held behind a slow push service. A notice for the same repository pane inside 10 seconds is not sent again, and the `Topic` header lets the push service replace an undelivered one. A 404 or 410 answer removes the subscription; other failures are logged with the endpoint's host only, since the path is a per-browser capability.
+
+The VAPID key (`~/.nightcrow/push/vapid`) and subscriptions (`subscriptions.json`, at most 32, oldest dropped) are written owner-only. A key file that exists but cannot be parsed is an error, not a reason to make a new one, because a new key silently ends every subscription. If the key cannot be loaded the viewer runs without Web Push and its `/api/push/*` routes answer 503.
+
+The routes are authenticated like every other `/api/` route, and everything but `GET /api/push/key` is a POST carrying the endpoint in its body. An endpoint must be an `https` URL on a public host name; addresses, `localhost`, `.local` names and userinfo are refused. There is deliberately no allowlist of push-service hosts: anyone who can register an endpoint can already run shell commands on this machine, and a list would break browsers whose push service it omits.
+
 ## Accepted residual risks
 
 - `Repository::discover` searches upward from a directory opened or restored by the user. If the specified path is not a repository, an ancestor worktree may be found and the viewer root may become broader than intended. Traversal is blocked, but operators must confirm which worktree range is actually served.

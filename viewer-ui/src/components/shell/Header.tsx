@@ -122,7 +122,7 @@ export function Header({
         title={`Project tabs ${tabStrip.side === "top" ? "across the top" : "down the left"} (click to move them ${otherSide(tabStrip.side)})`}
         aria-label={`project tabs: ${tabStrip.side}, click for ${otherSide(tabStrip.side)}`}
         aria-pressed={tabStrip.side === "left"}
-        className="ml-1 hidden h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200 md:flex"
+        className="ml-1 hidden h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent md:flex"
       >
         <TabStripIcon side={tabStrip.side} />
       </button>
@@ -130,9 +130,9 @@ export function Header({
         href="/logout"
         title="Sign out"
         aria-label="sign out"
-        className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:bg-ink-700 hover:text-ink-200"
+        className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent"
       >
-        <LogOutIcon className="h-3.5 w-3.5" />
+        <LogOutIcon />
       </a>
     </header>
   );

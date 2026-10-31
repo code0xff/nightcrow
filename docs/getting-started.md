@@ -77,7 +77,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 Enable this checkout's hooks once with `git config core.hooksPath .githooks`. The `pre-commit` hook runs the format check; `pre-push` runs the CI-equivalent gates for the changes in the push range. See [commit rules](../.agents/rules/commits.md) for commit-specific policy.
 
-The viewer source requires Node.js 26 and installed dependencies:
+The viewer source requires Node.js 26 (pinned in the root `.nvmrc`, so `nvm use` selects it) and installed dependencies:
 
 ```bash
 npm --prefix viewer-ui ci

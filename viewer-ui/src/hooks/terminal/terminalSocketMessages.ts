@@ -182,6 +182,12 @@ function handleControlMessage(
     case "error":
       toast.error(message.message);
       return;
+    // A pane asking for its person (`nightcrow notify`, or a plugin). Said
+    // here for whoever is looking at the page; a closed page hears it through
+    // Web Push instead.
+    case "attention":
+      toast.info(message.message ?? "A terminal wants your attention");
+      return;
   }
   const unhandled: never = message;
   return unhandled;

@@ -127,8 +127,8 @@ impl DaemonClient {
                 ServerMessage::Reloaded { .. } => {
                     tracing::debug!("attach: a reload answer arrived before the handshake");
                 }
-                ServerMessage::Status { .. } => {
-                    bail!("daemon answered an attach handshake with a status response")
+                ServerMessage::Status { .. } | ServerMessage::Notified => {
+                    bail!("daemon answered an attach handshake with a one-shot response")
                 }
             }
         };

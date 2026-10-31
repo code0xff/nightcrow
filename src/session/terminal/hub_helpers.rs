@@ -44,6 +44,13 @@ pub enum Command {
     ReloadPlugins {
         plugins: Vec<crate::config::PluginConfig>,
     },
+    /// On the queue because only the worker's backend can say which pane a
+    /// token names. `reply` carries whether one did.
+    Notify {
+        token: crate::backend::PaneToken,
+        message: Option<String>,
+        reply: std::sync::mpsc::SyncSender<bool>,
+    },
 }
 
 /// The newest size one connection wants for one pane. Resize traffic is kept
