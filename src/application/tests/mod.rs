@@ -1,6 +1,8 @@
 mod accent;
 mod draw_backend;
 mod enter_fullscreen;
+#[path = "../event_loop_tests.rs"]
+mod event_loop;
 mod helpers;
 mod mouse;
 mod mouse_clicks;

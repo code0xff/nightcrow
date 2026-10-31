@@ -1,4 +1,4 @@
-//! Release-only measurements for the dirty-frame event loop.
+//! Release-only measurements for dirty-frame gating and PTY echo observation.
 //!
 //! Run explicitly because the PTY half starts a real shell:
 //!
@@ -15,7 +15,8 @@ use ratatui::{Terminal, backend::TestBackend, widgets::Paragraph};
 use std::time::{Duration, Instant};
 
 const TICKS: usize = 600;
-const TICK: Duration = Duration::from_millis(16);
+#[cfg(unix)]
+const PTY_SAMPLE_INTERVAL: Duration = Duration::from_millis(16);
 #[cfg(unix)]
 const PTY_SAMPLES: usize = 20;
 #[cfg(unix)]
@@ -64,18 +65,11 @@ fn run_dirty(ticks: usize, event_every: Option<usize>) -> DrawRun {
     }
 }
 
+#[cfg(unix)]
 fn p95(mut samples: Vec<Duration>) -> Duration {
     samples.sort_unstable();
     let rank = (samples.len() * 95).div_ceil(100).saturating_sub(1);
     samples[rank]
-}
-
-/// Events arrive after the current frame's draw in `main_loop`, so the next
-/// frame is bounded by one input-poll interval. Keep this virtual measurement
-/// beside the real PTY sample to make the latency claim explicit and stable.
-fn simulated_event_latency_p95(ticks: usize, event_every: usize) -> Duration {
-    let samples = (0..ticks).step_by(event_every).map(|_| TICK).collect();
-    p95(samples)
 }
 
 #[cfg(unix)]
@@ -94,7 +88,7 @@ fn measure_pty_echo() -> Vec<Duration> {
     let warmup_deadline = Instant::now() + Duration::from_millis(250);
     while Instant::now() < warmup_deadline {
         let _ = backend.drain_events();
-        std::thread::sleep(TICK);
+        std::thread::sleep(PTY_SAMPLE_INTERVAL);
     }
 
     let mut samples = Vec::with_capacity(PTY_SAMPLES);
@@ -125,7 +119,7 @@ fn measure_pty_echo() -> Vec<Duration> {
             if seen {
                 break;
             }
-            std::thread::sleep(TICK);
+            std::thread::sleep(PTY_SAMPLE_INTERVAL);
         }
         assert!(
             seen,
@@ -144,9 +138,6 @@ fn measure_dirty_redraw() {
     let idle = run_dirty(TICKS, None);
     let heartbeat = run_dirty(TICKS, Some(60));
     let active = run_dirty(TICKS, Some(1));
-    let before_latency = simulated_event_latency_p95(TICKS, 1);
-    let after_latency = simulated_event_latency_p95(TICKS, 1);
-
     assert_eq!(idle.draws, 1, "idle should retain only the initial frame");
     assert_eq!(heartbeat.draws, TICKS / 60, "one heartbeat per second");
     assert_eq!(
@@ -165,22 +156,16 @@ fn measure_dirty_redraw() {
         heartbeat.elapsed.as_secs_f64() * 1000.0,
         active.elapsed.as_secs_f64() * 1000.0
     );
-    println!(
-        "event-to-next-frame-p95-ms: before={:.3} after={:.3} (poll cap {:?})",
-        before_latency.as_secs_f64() * 1000.0,
-        after_latency.as_secs_f64() * 1000.0,
-        TICK
-    );
     #[cfg(unix)]
     {
         let echo = measure_pty_echo();
         println!(
-            "pty-echo-p95-ms: {:.3} ({} samples; poll cap {:?})",
+            "pty-echo-observed-p95-ms: {:.3} ({} samples; poll interval {:?})",
             p95(echo).as_secs_f64() * 1000.0,
             PTY_SAMPLES,
-            TICK
+            PTY_SAMPLE_INTERVAL
         );
     }
     #[cfg(not(unix))]
-    println!("pty-echo-p95-ms: unavailable (headless Windows ConPTY)");
+    println!("pty-echo-observed-p95-ms: unavailable (headless Windows ConPTY)");
 }
