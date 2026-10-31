@@ -1,7 +1,7 @@
+use crate::application::input::dispatch::KeyOutcome;
 pub(crate) use crate::application::input::dispatch::ProjectContext;
-use crate::application::input::dispatch::{KeyOutcome, dispatch_key};
-use crate::application::input::mouse::dispatch_mouse;
-use crate::application::input::paste::dispatch_paste;
+use crate::application::input::events::dispatch_input_event;
+use crate::application::input::ready::{InputControl, process_ready_input};
 use crate::application::redraw::{RedrawCause, RedrawState};
 use crate::application::session_link::SessionLink;
 use crate::application::size_activity::claim_for_user_activity;
@@ -42,14 +42,35 @@ pub(crate) fn main_loop(
                  reattach with `nightcrow attach`"
             );
         }
-        // Every project drains its queues, not just the visible one: the
-        // snapshot worker and PTY reader keep producing regardless of which
-        // tab is on screen. Only the active project
-        // *applies* its snapshot, though — a background one waits in
-        // `pending_snapshot` until its tab is shown.
+        // Pane lifecycle and resize confirmations must precede the next input.
+        poll_terminals_before_input(ws, &mut redraw);
+
+        let progress = process_ready_input(read_ready_event, expand_input_event, |event| {
+            claim_for_user_activity(ws, &event);
+            let outcome =
+                dispatch_input_event(terminal, ws, cfg, event, &mut redraw, blink_started)?;
+            if let Some(outcome) = outcome {
+                let force_redraw = matches!(outcome, KeyOutcome::Redraw);
+                if apply_outcome(terminal, ws, &mut link, outcome)? {
+                    return Ok(InputControl::Quit);
+                }
+                if force_redraw {
+                    redraw.request(RedrawCause::Redraw);
+                }
+            }
+            Ok(InputControl::Continue)
+        })?;
+        if progress.quit {
+            return Ok(());
+        }
         let active = ws.active_index();
+        // Every project drains its queues, not just the visible one: the
+        // snapshot worker keeps producing regardless of which tab is on
+        // screen. Terminal events were already drained before input; only the
+        // active project applies its snapshot, while hidden ones wait in
+        // `pending_snapshot` until shown.
         for (i, project) in ws.projects_mut().iter_mut().enumerate() {
-            if project.poll_git_loads() {
+            if project.poll_git_loads() && i == active {
                 redraw.request(RedrawCause::Git);
             }
             if i == active {
@@ -65,10 +86,9 @@ pub(crate) fn main_loop(
             } else {
                 project.drain_snapshot();
             }
-            // Cheap drains that must run everywhere: the tree watcher so OS
-            // filesystem events do not pile up, the terminal so PTY output is
-            // consumed before the pipe fills and blocks the child. Acting on a
-            // watcher event is active-only; a hidden project records the event.
+            // Cheap drains that must run everywhere: the tree watcher keeps OS
+            // filesystem events from piling up. Acting on a watcher event is
+            // active-only; a hidden project records the event.
             if i == active {
                 if project.poll_tree_watcher() {
                     redraw.request(RedrawCause::Tree);
@@ -76,14 +96,7 @@ pub(crate) fn main_loop(
             } else {
                 project.drain_tree_watcher();
             }
-            if project.poll_terminal() {
-                redraw.request(RedrawCause::Terminal);
-            }
         }
-        // Project-tab attention is client-local and means "not seen on this
-        // screen". The project in front has just consumed its terminal events,
-        // so everything through this tick is visible and acknowledged.
-        ws.acknowledge_active_attention();
 
         let size = terminal.size()?;
         let screen = Rect::new(0, 0, size.width, size.height);
@@ -112,9 +125,8 @@ pub(crate) fn main_loop(
             .iter()
             .map(|project| project.terminal.has_unread_attention())
             .collect();
-        let has_attention = tab_attention.iter().any(|attention| *attention);
         let attention_bright = crate::ui::project_tab::blink_is_bright(blink_started.elapsed());
-        redraw.observe_attention(has_attention, attention_bright);
+        redraw.observe_attention(&tab_attention, attention_bright);
         let now = SystemTime::now();
         let hot_deadline = ws
             .active()
@@ -162,77 +174,37 @@ pub(crate) fn main_loop(
             })?;
         }
 
-        // `tabs` above borrows the workspace for the draw; input needs it
-        // mutably, so rebuild the same view over a snapshot of the dialog.
-        // Only the buffer is copied here; the frame itself may be skipped when
-        // no state or visual clock phase changed.
-        let repo_input = ws.repo_input.clone();
-        let help_snapshot = ws.help.clone();
-        let tabs = crate::ui::Chrome {
-            repo_paths: &tab_paths,
-            attention: &tab_attention,
-            attention_bright,
-            active: active_tab,
-            repo_input: &repo_input,
-            help: &help_snapshot,
-            strip: cfg.layout.tabs,
-        };
+        // Ready input was handled before rendering; this 16 ms wait is only
+        // the idle latency cap between source events.
+        event::poll(Duration::from_millis(16))?;
+    }
+}
 
-        // 16 ms ≈ 60 fps is only the polling latency cap. Unlike the old frame
-        // clock, an idle tick does not draw; the wait lets asynchronous PTY and
-        // watcher results be noticed without keeping a terminal frame alive.
-        if event::poll(Duration::from_millis(16))? {
-            let first = event::read()?;
-            // Unix gets a real `Event::Paste` from crossterm; Windows never
-            // does, so a paste burst is drained and rewritten into one here
-            // (`input::burst`) for the same arm below to route.
-            #[cfg(windows)]
-            let events = crate::application::input::burst::coalesce_paste(first)?;
-            #[cfg(not(windows))]
-            let events = [first];
-
-            for event in events {
-                claim_for_user_activity(ws, &event);
-                match event {
-                    // Ratatui's next draw will pick up the new size from
-                    // `Frame::area()`. An explicit clear() here only adds a
-                    // visible flash on resize without improving correctness.
-                    Event::Resize(_, _) => redraw.request(RedrawCause::Resize),
-                    Event::Key(key) => {
-                        let pressed = key.kind == crossterm::event::KeyEventKind::Press;
-                        if pressed {
-                            redraw.request(RedrawCause::Input);
-                        }
-                        let outcome = dispatch_key(ws, key);
-                        let force_redraw = matches!(outcome, KeyOutcome::Redraw);
-                        if apply_outcome(terminal, ws, &mut link, outcome)? {
-                            return Ok(());
-                        }
-                        if force_redraw {
-                            redraw.request(RedrawCause::Redraw);
-                        }
-                    }
-                    Event::Paste(text) => {
-                        redraw.request(RedrawCause::Input);
-                        dispatch_paste(ws, &text);
-                    }
-                    Event::Mouse(mouse) => {
-                        redraw.request(RedrawCause::Input);
-                        let screen = Rect::new(0, 0, size.width, size.height);
-                        let outcome =
-                            dispatch_mouse(ws, tabs, mouse, screen, &cfg.layout, cfg.mouse.enabled);
-                        let force_redraw = matches!(outcome, KeyOutcome::Redraw);
-                        if apply_outcome(terminal, ws, &mut link, outcome)? {
-                            return Ok(());
-                        }
-                        if force_redraw {
-                            redraw.request(RedrawCause::Redraw);
-                        }
-                    }
-                    _ => redraw.request(RedrawCause::Input),
-                }
-            }
+pub(crate) fn poll_terminals_before_input(ws: &mut Workspace, redraw: &mut RedrawState) {
+    let active = ws.active_index();
+    for (i, project) in ws.projects_mut().iter_mut().enumerate() {
+        if project.poll_terminal() && i == active {
+            redraw.request(RedrawCause::Terminal);
         }
+    }
+    ws.acknowledge_active_attention();
+}
+
+fn read_ready_event() -> anyhow::Result<Option<Event>> {
+    if event::poll(Duration::ZERO)? {
+        return Ok(Some(event::read()?));
+    }
+    Ok(None)
+}
+
+fn expand_input_event(first: Event) -> anyhow::Result<Vec<Event>> {
+    #[cfg(windows)]
+    {
+        Ok(crate::application::input::burst::coalesce_paste(first)?)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(vec![first])
     }
 }
 
