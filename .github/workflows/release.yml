@@ -70,7 +70,7 @@ jobs:
             target: x86_64-apple-darwin
             asset: nightcrow-x86_64-apple-darwin
             suffix: ''
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             asset: nightcrow-aarch64-apple-darwin
             suffix: ''
