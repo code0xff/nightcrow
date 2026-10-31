@@ -1496,7 +1496,7 @@ dependencies = [
 
 [[package]]
 name = "nightcrow"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "aes-gcm",
  "alacritty_terminal",
@@ -1537,7 +1537,7 @@ dependencies = [
 
 [[package]]
 name = "nightcrow-memory"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "anyhow",
  "rusqlite",
@@ -1548,7 +1548,7 @@ dependencies = [
 
 [[package]]
 name = "nightcrow-recovery"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "anyhow",
  "serde",
