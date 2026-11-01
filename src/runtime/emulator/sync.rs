@@ -11,13 +11,17 @@ use super::{EmulatorEvents, PaneEmulator};
 use std::time::Instant;
 
 impl PaneEmulator {
+    /// When the open synchronized update ends on the clock, or `None` when none
+    /// is open. The owner of this emulator sleeps until then rather than
+    /// re-asking on a timer.
+    pub fn sync_deadline(&self) -> Option<Instant> {
+        self.processor.sync_timeout().sync_timeout()
+    }
+
     /// Whether an open synchronized update has outlived its timeout as of
     /// `now`. False when no update is open.
     pub fn sync_expired(&self, now: Instant) -> bool {
-        self.processor
-            .sync_timeout()
-            .sync_timeout()
-            .is_some_and(|deadline| deadline <= now)
+        self.sync_deadline().is_some_and(|deadline| deadline <= now)
     }
 
     /// End an open synchronized update, applying to the grid the bytes it held

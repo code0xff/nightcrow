@@ -17,7 +17,7 @@ impl TerminalHub {
 
     /// Let the sizing pass on if its owner has been gone past the grace.
     ///
-    /// Driven from the worker tick rather than a timer of its own: the grace only
+    /// Driven from the worker's passes rather than a timer of its own: the grace only
     /// has to end promptly while there is a hub running for someone to see it,
     /// and it costs a lock and an early return on the common path.
     pub(super) fn settle_size_owner(&self, now: std::time::Instant) {

@@ -2,7 +2,7 @@
 //! actions. Every function here is a no-op for a pane no plugin owns, so the
 //! ordinary terminal path pays one hash lookup and nothing else.
 
-use super::hub_plugins::{MAX_COMMANDS_PER_TICK, PANE_IDLE_THRESHOLD, Plugins};
+use super::hub_plugins::{COMMAND_DRAIN_PACE, MAX_COMMANDS_PER_TICK, PANE_IDLE_THRESHOLD, Plugins};
 use crate::backend::{PaneGeneration, PaneId, PaneToken, PtyBackend};
 use crate::plugin::protocol::{PROTOCOL_VERSION, PluginCommand, PluginEvent};
 use crate::plugin::{Approved, PaneFacts, Refused};
@@ -141,19 +141,60 @@ impl Plugins {
         }
     }
 
-    /// Take what every plugin has asked for since the last tick, at most
+    /// Take what every plugin has asked for since the last pass, at most
     /// [`MAX_COMMANDS_PER_TICK`] each so a chatty plugin cannot starve the panes.
-    pub(super) fn take_commands(&self) -> Vec<(String, PluginCommand)> {
+    ///
+    /// Records whether any host filled its budget, so the worker drains the
+    /// remainder at [`COMMAND_DRAIN_PACE`] rather than parking on a deadline that
+    /// knows nothing about it.
+    pub(super) fn take_commands(&mut self) -> Vec<(String, PluginCommand)> {
         let mut taken = Vec::new();
+        let mut capped = false;
         for (name, host) in &self.hosts {
+            let mut here = 0;
             for _ in 0..MAX_COMMANDS_PER_TICK {
                 match host.try_recv() {
-                    Some(command) => taken.push((name.clone(), command)),
+                    Some(command) => {
+                        taken.push((name.clone(), command));
+                        here += 1;
+                    }
                     None => break,
                 }
             }
+            capped |= here == MAX_COMMANDS_PER_TICK;
         }
+        self.commands_capped = capped;
         taken
+    }
+
+    /// The earliest moment the plugin side has work of its own: commands left
+    /// over from a saturated budget, a pane that has gone quiet long enough to be
+    /// announced idle, or a relaunch hold running out.
+    ///
+    /// `None` when no host is running, which is the common case and the one where
+    /// no plugin work can arrive at all.
+    pub(super) fn next_deadline(&self, backend: &PtyBackend, now: Instant) -> Option<Instant> {
+        if self.hosts.is_empty() {
+            return None;
+        }
+        let mut next = self.pending.values().map(|held| held.deadline).min();
+        for pane in self.owners.keys() {
+            // The same three conditions `notify_idle` announces under: a pane
+            // already announced, or one whose process is gone, owes nothing.
+            if self.idle_announced.contains(pane) || !backend.is_process_alive(*pane) {
+                continue;
+            }
+            let Some(slot) = backend.slot(*pane) else {
+                continue;
+            };
+            let idle_at = slot.last_output() + PANE_IDLE_THRESHOLD;
+            next = Some(next.map_or(idle_at, |next| next.min(idle_at)));
+        }
+        if self.commands_capped {
+            let drained = now + COMMAND_DRAIN_PACE;
+            next = Some(next.map_or(drained, |next| next.min(drained)));
+        }
+        next
     }
 
     /// Put one command through the guard.

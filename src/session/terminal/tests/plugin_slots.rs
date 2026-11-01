@@ -55,7 +55,7 @@ fn an_exited_watched_pane_keeps_its_token_while_a_plain_pane_loses_its() {
 fn a_hold_that_runs_out_of_time_retires_the_slot() {
     let f = fixture();
     let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
-    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()]);
+    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()], None);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
         .expect("open a pane");
@@ -92,7 +92,7 @@ fn a_hold_that_runs_out_of_time_retires_the_slot() {
 fn a_human_typing_into_a_watched_pane_clears_what_its_plugin_had_spent() {
     let f = fixture();
     let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
-    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()]);
+    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()], None);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
         .expect("open a pane");
@@ -133,7 +133,7 @@ fn a_human_typing_into_a_watched_pane_clears_what_its_plugin_had_spent() {
 fn a_quiet_pane_is_announced_idle_once_until_it_speaks_again() {
     let f = fixture();
     let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
-    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()]);
+    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()], None);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
         .expect("open a pane");

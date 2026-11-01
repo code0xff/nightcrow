@@ -9,6 +9,7 @@ use super::host_command::configure_command;
 use super::host_pump;
 use super::protocol::{PROTOCOL_VERSION, PluginCommand, PluginEvent, encode_event};
 use crate::config::PluginConfig;
+use crate::platform::threading::WakeHandle;
 use crate::platform::threading::{REAP_TIMEOUT, try_timed_join};
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -73,18 +74,22 @@ impl PluginHost {
     /// No pane token is passed in the environment. A plugin learns which panes
     /// exist only from the events it is sent, which is what keeps a plugin from
     /// addressing a pane that never opted in to it.
+    /// `waker` is signalled when the plugin queues a command, so a hub that parks
+    /// between passes is not left to discover it on its own timer.
     pub fn spawn(
         cfg: &PluginConfig,
         plugin_dir: Option<&Path>,
         runtime_dir: Option<&Path>,
+        waker: Option<WakeHandle>,
     ) -> Result<PluginHost> {
-        Self::spawn_with_queue_depth(cfg, plugin_dir, runtime_dir, OUTBOUND_QUEUE_DEPTH)
+        Self::spawn_with_queue_depth(cfg, plugin_dir, runtime_dir, waker, OUTBOUND_QUEUE_DEPTH)
     }
 
     fn spawn_with_queue_depth(
         cfg: &PluginConfig,
         plugin_dir: Option<&Path>,
         runtime_dir: Option<&Path>,
+        waker: Option<WakeHandle>,
         depth: usize,
     ) -> Result<PluginHost> {
         let (program, mut command) = configure_command(cfg, plugin_dir, runtime_dir);
@@ -119,7 +124,7 @@ impl PluginHost {
                 host_pump::write_events(stdin, events_rx, writer_name)
             })),
             reader: Some(thread::spawn(move || {
-                host_pump::read_commands(stdout, commands_tx, reader_name)
+                host_pump::read_commands(stdout, commands_tx, reader_name, waker)
             })),
             stderr: Some(thread::spawn(move || {
                 host_pump::drain_stderr(stderr, stderr_name)

@@ -9,6 +9,10 @@ use std::time::{Duration, Instant};
 pub(super) struct Client {
     pub(super) id: u64,
     pub(super) tx: SyncSender<TerminalFrame>,
+    /// Frames broadcast while this client's replay is still being framed, held
+    /// so they can only follow it. `None` once the replay is queued — from then
+    /// on frames go straight to `tx` (see [`super::hub_connect::TerminalHub::connect`]).
+    pub(super) replay_held: Option<Vec<TerminalFrame>>,
     /// Used to close the socket when this client's queue overflows. Dropping
     /// from the broadcast list alone stops frames but leaves the connection
     /// thread parked — closing the socket is what turns that into a real
@@ -16,8 +20,10 @@ pub(super) struct Client {
     /// daemon's bridge, whose backpressure is applied a layer out).
     pub(super) socket: Option<std::net::TcpStream>,
     /// Registration with the session's size ownership — names the screen behind
-    /// this connection, tracked across every repository.
-    pub(super) connection: u64,
+    /// this connection, tracked across every repository. Filled in after the
+    /// replay is queued, because the registration's verdict must not overtake
+    /// the replay; until then no caller can reach this connection.
+    pub(super) connection: Option<u64>,
 }
 
 impl Client {
@@ -163,7 +169,7 @@ impl TerminalSession {
         // send would then wedge every connection thread for this repository.
         // Dropping a command under that much backpressure is the honest
         // outcome; the client is already far ahead of what the shell can take.
-        if let Err(TrySendError::Full(_)) = self.hub.commands.try_send(command) {
+        if let Err(TrySendError::Full(_)) = self.hub.submit(command) {
             tracing::debug!("viewer: terminal command queue full, dropping");
         }
     }

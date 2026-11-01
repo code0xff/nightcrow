@@ -4,6 +4,8 @@ use crate::config::ShellConfig;
 
 #[path = "pty_tests/backpressure.rs"]
 mod backpressure;
+#[path = "pty_tests/drain.rs"]
+mod drain;
 #[path = "pty_tests/identity.rs"]
 mod identity;
 #[path = "pty_tests/io.rs"]

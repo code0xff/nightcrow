@@ -2,6 +2,7 @@ use super::slot::{PaneSlot, PaneSlots};
 use super::{BackendEvent, PaneId, ResizeOutcome, TerminalBackend};
 use crate::config::ShellConfig;
 use crate::platform::process_tree::ProcessTree;
+use crate::platform::threading::WakeHandle;
 use anyhow::Result;
 use portable_pty::PtySize;
 use std::collections::BTreeMap;
@@ -17,7 +18,11 @@ mod io;
 #[path = "pty_spawn.rs"]
 mod spawn;
 
+#[path = "pty_drain.rs"]
+mod drain;
 mod reap;
+#[path = "pty_wakeup.rs"]
+mod wakeup;
 
 /// Reap window for PTY reader / wait threads. Bigger than the commit-log
 /// REAP_TIMEOUT because `read()` on a PTY master can stay blocked if a
@@ -110,6 +115,15 @@ pub struct PtyBackend {
     created: Vec<BackendEvent>,
     /// The shell every terminal pane is spawned with.
     pub(super) shell: ShellConfig,
+    /// Set by an owner that parks between passes, so the reader and waiter
+    /// threads below can tell it an event is queued. `None` leaves the owner
+    /// polling, which is what the attached TUI's backend does.
+    waker: Option<WakeHandle>,
+    /// Whether the last drain spent a pane's budget with events still possibly
+    /// queued. The reader's wake for those was consumed by the pass that spent
+    /// the budget, so the owner has to be told to come back at once rather than
+    /// wait for another signal (see [`PtyBackend::next_deadline`]).
+    drain_backlog: bool,
 }
 
 impl PtyBackend {
@@ -121,6 +135,8 @@ impl PtyBackend {
             cwd: cwd.as_ref().to_path_buf(),
             created: Vec::new(),
             shell,
+            waker: None,
+            drain_backlog: false,
         }
     }
 
@@ -209,69 +225,9 @@ impl TerminalBackend for PtyBackend {
     }
 
     fn drain_events(&mut self) -> Vec<BackendEvent> {
-        // Pane removal is the caller's responsibility (App::poll_terminal calls
-        // destroy_pane on Exited). Doing it here too created a dual-ownership
-        // race where reader-thread events queued after destroy_pane were
-        // silently dropped, and where Exited could be reported twice.
-        //
-        // The reader thread emits all Output messages, then a single Exited as
-        // the last message before its sender drops, so the mpsc order means no
-        // separate post-Exited drain is needed. `ChildExited` carries no such
-        // ordering — it can overtake output already written — so it only moves
-        // the pane to `Draining`.
-        //
-        // Each pane is drained up to PER_PANE_DRAIN_BUDGET events so one noisy
-        // pane (e.g. `yes | head -100000`) cannot starve its siblings within a
-        // frame; the rest lands on the next tick.
-        // Ahead of any output: a pane has to exist before bytes can be routed
-        // to it, and both can be queued before the same drain.
-        let mut events: Vec<BackendEvent> = std::mem::take(&mut self.created);
-        let now = Instant::now();
-        for (id, pane) in &mut self.panes {
-            let mut budget = PER_PANE_DRAIN_BUDGET;
-            while budget > 0 {
-                match pane
-                    .rx
-                    .as_ref()
-                    .expect("live pane has output receiver")
-                    .try_recv()
-                {
-                    Ok(PtyEvent::Output(data)) => {
-                        // One timestamp for the whole drain: the bytes arrived
-                        // between this tick and the last, and a per-event clock
-                        // read would claim a precision the 8 ms poll does not
-                        // have.
-                        self.slots.mark_output(*id, now);
-                        events.push(BackendEvent::Output { pane: *id, data });
-                    }
-                    Ok(PtyEvent::ChildExited) => {
-                        if pane.exit == ExitPhase::Running {
-                            pane.exit = ExitPhase::Draining { since: now };
-                        }
-                    }
-                    Ok(PtyEvent::Exited) => {
-                        if pane.exit != ExitPhase::Reported {
-                            pane.exit = ExitPhase::Reported;
-                            events.push(BackendEvent::Exited { pane: *id });
-                        }
-                        break;
-                    }
-                    Err(_) => {
-                        // Dry: for a dead child past its drain grace, the cue
-                        // to report.
-                        if let ExitPhase::Draining { since } = pane.exit
-                            && now.duration_since(since) >= EXIT_DRAIN_GRACE
-                        {
-                            pane.exit = ExitPhase::Reported;
-                            events.push(BackendEvent::Exited { pane: *id });
-                        }
-                        break;
-                    }
-                }
-                budget -= 1;
-            }
-        }
-        events
+        // What a pass reports, and how a budget spent with events still queued
+        // asks to be run again, live in `drain_queued`.
+        self.drain_queued()
     }
 }
 

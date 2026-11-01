@@ -48,7 +48,7 @@ fn a_plugin_that_watches_on_signal_is_launched_with_no_pane_opted_in() {
     // The panes it exists for cannot opt in, so it has to be running before any of
     // them says anything. `adopt` succeeding is how "it has a live host" is read.
     let f = fixture();
-    let mut plugins = Plugins::start(&f.cwd(), &[signal_watcher(PLUGIN, &f.log)], &[]);
+    let mut plugins = Plugins::start(&f.cwd(), &[signal_watcher(PLUGIN, &f.log)], &[], None);
 
     assert!(plugins.adopt(1, PLUGIN));
 }
@@ -57,7 +57,7 @@ fn a_plugin_that_watches_on_signal_is_launched_with_no_pane_opted_in() {
 fn a_watch_request_bearing_a_live_panes_token_is_approved_and_the_pane_handed_over() {
     let f = fixture();
     let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
-    let mut plugins = Plugins::start(&f.cwd(), &[signal_watcher(PLUGIN, &f.log)], &[]);
+    let mut plugins = Plugins::start(&f.cwd(), &[signal_watcher(PLUGIN, &f.log)], &[], None);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
         .expect("open a pane");
@@ -81,7 +81,7 @@ fn a_watch_request_from_a_plugin_without_the_switch_is_refused() {
     // it: this is the only thing standing between a signal and a new association.
     let f = fixture();
     let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
-    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()]);
+    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()], None);
     let pane = bare_pane(&mut backend);
     let token = token_of(&backend, pane);
 
@@ -109,6 +109,7 @@ fn a_watch_request_for_a_pane_another_plugin_holds_is_refused() {
             signal_watcher(OTHER, &f.log),
         ],
         &[],
+        None,
     );
     let pane = bare_pane(&mut backend);
     let token = token_of(&backend, pane);
@@ -132,7 +133,7 @@ fn a_watch_request_for_a_token_this_host_never_minted_is_refused() {
     // per-user, so its tokens do reach us, and they must resolve to nothing.
     let f = fixture();
     let backend = PtyBackend::new(f.cwd(), ShellConfig::default());
-    let mut plugins = Plugins::start(&f.cwd(), &[signal_watcher(PLUGIN, &f.log)], &[]);
+    let mut plugins = Plugins::start(&f.cwd(), &[signal_watcher(PLUGIN, &f.log)], &[], None);
     let stranger = PaneToken::new().expect("OS RNG");
 
     let refused = plugins
@@ -149,7 +150,7 @@ fn a_pane_handed_over_on_a_signal_can_never_be_relaunched() {
     // than the session the plugin was recovering.
     let f = fixture();
     let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
-    let mut plugins = Plugins::start(&f.cwd(), &[signal_watcher(PLUGIN, &f.log)], &[]);
+    let mut plugins = Plugins::start(&f.cwd(), &[signal_watcher(PLUGIN, &f.log)], &[], None);
     let pane = bare_pane(&mut backend);
     let token = token_of(&backend, pane);
     assert!(plugins.adopt(pane, PLUGIN));

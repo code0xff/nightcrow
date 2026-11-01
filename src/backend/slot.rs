@@ -30,6 +30,12 @@ impl PaneSlot {
     pub fn idle_for(&self, now: Instant) -> Duration {
         now.saturating_duration_since(self.last_output)
     }
+
+    /// When the child last produced output. The owner of an idle-dependent
+    /// deadline reads this rather than re-deriving the instant from a duration.
+    pub fn last_output(&self) -> Instant {
+        self.last_output
+    }
 }
 
 /// Per-pane slot bookkeeping, held beside the live PTYs.

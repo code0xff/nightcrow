@@ -72,8 +72,7 @@ impl TerminalHub {
         // all-or-nothing, so there is no state where some startup terminals
         // were accepted and the rest were silently lost.
         if self
-            .commands
-            .try_send(Command::CreateStartup {
+            .submit(Command::CreateStartup {
                 panes,
                 client,
                 reserved,
