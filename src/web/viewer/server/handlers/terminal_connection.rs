@@ -134,7 +134,14 @@ impl Connection {
                         return end;
                     }
                 }
-                Step::Close => return End::Silent(self.liveness.silence_limit()),
+                // A client with a write outstanding is not necessarily silent:
+                // its pongs and input can be waiting in the channel this thread
+                // has stopped draining. Leave it to the hub's overflow, which
+                // ends a client that truly stopped keeping up.
+                Step::Close if !self.unflushed => {
+                    return End::Silent(self.liveness.silence_limit());
+                }
+                Step::Close => {}
             }
 
             // Sleep until an event arrives or the next decision is due. A

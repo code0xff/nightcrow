@@ -4,7 +4,7 @@ use super::super::terminal_connection::{WAKES, run};
 use super::super::terminal_liveness::Timing;
 use super::super::terminal_pipe::{GUARD_WAKES, JOINS, READ_GUARD};
 use super::fixture::{Wired, short, wired, wired_panicking, wired_with};
-use crate::session::terminal::TerminalFrame;
+use crate::session::terminal::{CLIENT_QUEUE_DEPTH, TerminalFrame};
 use std::net::Shutdown;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -282,6 +282,79 @@ fn a_panicking_writer_still_releases_the_connection() {
         JOINS.load(Ordering::Relaxed) >= before + 2,
         "both helper threads must be joined on the way out"
     );
+    hub.stop();
+}
+
+/// A page that is answering but not reading has its frames queued behind a
+/// stalled write. Closing it as silent would punish exactly the slow connection
+/// the retry beat exists for; the hub's overflow is what ends a client that
+/// really stopped keeping up.
+#[test]
+fn a_stalled_write_is_not_mistaken_for_a_silent_page() {
+    let Wired {
+        mut page,
+        served,
+        link,
+        session,
+        hub,
+        cut_off,
+        ..
+    } = wired();
+
+    let finished = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&finished);
+    let runner = std::thread::spawn(move || {
+        run(served, link, session, short());
+        flag.store(true, Ordering::Release);
+    });
+
+    // Fill the socket so the writer stalls. Fewer frames than the hub's queue
+    // can hold, so overflow cannot end this connection and the silence limit is
+    // the only thing that could.
+    let data: Arc<[u8]> = vec![b'x'; 256 * 1024].into();
+    for _ in 0..CLIENT_QUEUE_DEPTH - 6 {
+        hub.test_broadcast(TerminalFrame::Output {
+            pane: 1,
+            data: Arc::clone(&data),
+        });
+    }
+
+    // The page is alive on the way in and never reads. Those frames reach the
+    // connection's channel and stop there, because the writer may not drain it
+    // while a write is outstanding.
+    let typing = std::thread::spawn(move || {
+        let until = Instant::now() + Duration::from_millis(800);
+        while Instant::now() < until {
+            if page
+                .send(Message::Text(r#"{"type":"zoom","pane":null}"#.into()))
+                .is_err()
+            {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        Some(page)
+    });
+
+    std::thread::sleep(Duration::from_millis(800));
+    assert!(
+        !finished.load(Ordering::Acquire),
+        "a stalled socket was closed as though the page had gone silent"
+    );
+    assert_eq!(hub.client_count(), 1, "the client must still be holding on");
+
+    let _ = cut_off.shutdown(Shutdown::Both);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !finished.load(Ordering::Acquire) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        finished.load(Ordering::Acquire),
+        "the cut-off socket did not end the loop"
+    );
+    runner.join().expect("the connection thread panicked");
+    let _page = typing.join().expect("the typing page panicked");
+    assert_eq!(hub.client_count(), 0);
     hub.stop();
 }
 
