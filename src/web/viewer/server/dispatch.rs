@@ -20,12 +20,6 @@ pub(super) fn accept_loop(listener: TcpListener, state: Arc<ViewerState>) {
     let mut cap_warning = CapWarning::new();
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
-        // A page whose network path vanished leaves a socket that never reports
-        // an error, so let the OS find out instead. Failing to ask is worth a
-        // line, not a refusal: liveness pings still cover the connection.
-        if let Err(err) = crate::platform::net::enable_keepalive(&stream) {
-            tracing::debug!(%err, "viewer: could not enable TCP keepalive");
-        }
         let Some(slot) =
             ConnectionSlot::acquire(&state.connections, limits::MAX_VIEWER_CONNECTIONS)
         else {
@@ -41,6 +35,15 @@ pub(super) fn accept_loop(listener: TcpListener, state: Arc<ViewerState>) {
             }
             continue;
         };
+        // A page whose network path vanished leaves a socket that never reports
+        // an error, so let the OS find out instead. Failing to ask is worth a
+        // line, not a refusal: liveness pings still cover the connection. Set
+        // only on an admitted socket: a refused one is dropped immediately, and
+        // asking the OS about a connection that was never going to be served
+        // costs a kernel call per refusal.
+        if let Err(err) = crate::platform::net::enable_keepalive(&stream) {
+            tracing::debug!(%err, "viewer: could not enable TCP keepalive");
+        }
         let state = Arc::clone(&state);
         let _ = std::thread::Builder::new()
             .name("nightcrow-viewer-conn".into())
