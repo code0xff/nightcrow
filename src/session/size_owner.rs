@@ -21,7 +21,9 @@
 //! This file is the facade — locking, and the contract each caller sees. The
 //! rules themselves live with the state they read, in [`state`].
 
+use crate::platform::threading::WakeHandle;
 use crate::session::terminal::frame::TerminalFrame;
+use std::sync::Weak;
 use std::sync::mpsc::SyncSender;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -83,6 +85,15 @@ impl SizeOwnership {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Let `wake` be signalled when a departing owner starts the release grace.
+    ///
+    /// Every hub of the session registers, because the grace is one value for the
+    /// session and any running hub may be the one that ends it — including when
+    /// the connection that just left belonged to a hub that is stopping.
+    pub fn attach(&self, wake: &WakeHandle) {
+        self.lock().wakers.push(std::sync::Arc::downgrade(wake));
+    }
+
     /// Register a connection for `viewer`.
     ///
     /// `arriving` records the client's distinction between a new screen and a
@@ -101,7 +112,27 @@ impl SizeOwnership {
     /// Drop a connection. The sizing moves only when its viewer has no other,
     /// and even then not at once — see [`RELEASE_GRACE`].
     pub fn leave(&self, connection: u64, now: Instant) {
-        self.lock().leave(connection, now);
+        if self.lock().leave(connection, now) {
+            self.wake_hubs();
+        }
+    }
+
+    /// When the absent owner's grace runs out, if one is running.
+    pub fn next_deadline(&self) -> Option<Instant> {
+        self.lock().next_deadline()
+    }
+
+    /// Signal every hub whose owner is parked. Dead handles are dropped here
+    /// rather than in `leave`, so a retired repository's hub costs nothing.
+    fn wake_hubs(&self) {
+        let wakers: Vec<WakeHandle> = {
+            let mut inner = self.lock();
+            inner.wakers.retain(|wake| wake.strong_count() > 0);
+            inner.wakers.iter().filter_map(Weak::upgrade).collect()
+        };
+        for wake in wakers {
+            wake.wake();
+        }
     }
 
     /// Take the sizing at a viewer's own request — the fit button, or the TUI's
@@ -143,7 +174,7 @@ impl SizeOwnership {
 
     /// Hand the sizing on if its owner has been gone past the grace.
     ///
-    /// Called from the hubs' worker tick rather than a timer of its own: the
+    /// Called from the hubs' worker passes rather than a timer of its own: the
     /// grace only has to end promptly while someone is there to notice.
     pub fn settle(&self, now: Instant) {
         // Cheap on the common path: the owner is present, so nothing is pending.

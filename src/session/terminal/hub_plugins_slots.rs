@@ -52,7 +52,7 @@ impl PaneSpot {
 pub(super) struct Pending {
     pub(super) spot: PaneSpot,
     /// When the slot is given up on. See [`PENDING_RELAUNCH_TTL`].
-    deadline: Instant,
+    pub(super) deadline: Instant,
 }
 
 impl Plugins {

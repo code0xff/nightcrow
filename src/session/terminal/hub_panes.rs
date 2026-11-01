@@ -21,6 +21,7 @@ impl TerminalHub {
             .lock()
             .expect("terminal close queue poisoned")
             .insert(pane);
+        self.wake.wake();
     }
 
     pub(super) fn take_pending_closes(&self) -> Vec<PaneId> {

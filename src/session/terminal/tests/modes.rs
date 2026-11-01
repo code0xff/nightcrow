@@ -174,3 +174,23 @@ fn a_synchronized_update_inside_its_window_is_left_open() {
 
     assert!(tracker.settle_sync(std::time::Instant::now()).is_empty());
 }
+
+/// An open update is the one thing a quiet pane can be waiting on, so the tracker
+/// has to name the moment the clock ends it.
+#[test]
+fn an_open_update_names_the_moment_its_timeout_ends_it() {
+    let mut tracker = PaneModeTracker::default();
+    tracker.observe(PANE, b"\x1b[?2026h\x1b[?1049hpainted", || SIZE);
+
+    let deadline = tracker.next_deadline().expect("the update is armed");
+    assert!(
+        deadline > std::time::Instant::now(),
+        "an update inside its window is not due yet"
+    );
+    assert!(tracker.settle_sync(deadline).len() == 1);
+    assert_eq!(
+        tracker.next_deadline(),
+        None,
+        "the pass that ended it must leave no deadline behind"
+    );
+}

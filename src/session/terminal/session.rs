@@ -169,7 +169,7 @@ impl TerminalSession {
         // send would then wedge every connection thread for this repository.
         // Dropping a command under that much backpressure is the honest
         // outcome; the client is already far ahead of what the shell can take.
-        if let Err(TrySendError::Full(_)) = self.hub.commands.try_send(command) {
+        if let Err(TrySendError::Full(_)) = self.hub.submit(command) {
             tracing::debug!("viewer: terminal command queue full, dropping");
         }
     }

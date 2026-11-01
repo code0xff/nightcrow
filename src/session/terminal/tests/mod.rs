@@ -15,6 +15,7 @@ mod plugin_rules;
 mod plugin_slots;
 mod plugin_watch;
 mod plugins;
+mod pty_fixture;
 mod reattach;
 mod recovery;
 mod recovery_replay;
@@ -42,13 +43,16 @@ mod snapshot_trailing;
 mod startup;
 mod startup_policy;
 mod waiting;
+mod wakeup;
+mod wakeup_deadline;
 mod wire;
 mod zoom;
 
 use crate::backend::PaneId;
 use crate::session::terminal::{ConcurrencyTestPoint, TerminalHub};
 use std::sync::{Arc, Mutex, mpsc};
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use super::TerminalSession;
 
@@ -61,6 +65,30 @@ pub(super) use waiting::{SHELL_TEST_DEADLINE, next_matching, wait_for};
 
 /// How long a test waits for a connection to reach a point a hook announces.
 pub(super) const HOOK_DEADLINE: Duration = Duration::from_secs(5);
+
+/// How long a hub may take to notice work once its worker is parked. Well under
+/// the one-second cap the worker otherwise waits on, so a missing signal cannot
+/// pass for promptness.
+pub(super) const PROMPT: Duration = Duration::from_millis(500);
+
+/// Wait until the worker is parked on its wake signal: its pass count has stopped
+/// moving for longer than a pass takes.
+pub(super) fn wait_until_parked(hub: &Arc<TerminalHub>) {
+    let deadline = Instant::now() + SHELL_TEST_DEADLINE;
+    let mut last = hub.worker_passes();
+    let mut quiet_since = Instant::now();
+    while Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(10));
+        let passes = hub.worker_passes();
+        if passes != last {
+            last = passes;
+            quiet_since = Instant::now();
+        } else if quiet_since.elapsed() >= Duration::from_millis(50) {
+            return;
+        }
+    }
+    panic!("the worker never parked");
+}
 
 /// Hold the next connection at the replay boundary: the receiver fires once the
 /// hub's state lock is free again and the replay is not framed yet, and sending on

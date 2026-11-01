@@ -247,6 +247,26 @@ impl PaneModeTracker {
                 .is_none_or(|at| now.saturating_duration_since(at) >= SNAPSHOT_INTERVAL)
     }
 
+    /// The earliest moment this tracker has timed work of its own: a synchronized
+    /// update ending on the clock, or an owed pane whose window is still running.
+    /// A pane that owes bytes with no screen stored yet is taken by the pass that
+    /// recorded them, and one whose record ends mid-sequence waits for its next
+    /// chunk rather than for a clock, so neither is named here.
+    pub(super) fn next_deadline(&self) -> Option<Instant> {
+        let sync = self
+            .emulators
+            .values()
+            .filter_map(crate::runtime::emulator::PaneEmulator::sync_deadline)
+            .min();
+        let paced = self
+            .pace
+            .iter()
+            .filter(|(pane, pace)| pace.owed > 0 && self.at_boundary(**pane))
+            .filter_map(|(_, pace)| pace.at.map(|at| at + SNAPSHOT_INTERVAL))
+            .min();
+        sync.into_iter().chain(paced).min()
+    }
+
     /// Whether this pane's output so far ends with every sequence closed — the
     /// gate on anchoring a snapshot into its records. A snapshot spliced in
     /// mid-sequence would hand a reattaching client the sequence's tail as

@@ -23,6 +23,12 @@ Each local PTY buffers at most 256 output events in a synchronous bounded queue,
 
 Session limits are 8 PTYs per repository, pane dimensions of 1–500 rows × 1–1100 columns, and 256 KiB reconnect scrollback per pane. Close and resize use dedicated latest-state paths outside the bounded input queue so a full queue cannot lose the final request.
 
+## Hub worker wakeups
+
+Each repository's terminal worker sleeps between passes instead of ticking. Every producer the worker used to discover by polling signals one coalescing wake per hub: a client queueing a command, a close, or a resize; the PTY reader and waiter threads queueing output, an exit, or a child's death; a plugin's command reader; and a departing size-owner connection starting the release grace. `stop` signals it as well, so shutdown never waits out the cap.
+
+A pass ends by asking every owner of timed state for its next deadline, then waits until that instant, a signal, or a one-second cap, whichever comes first. The deadlines are an open synchronized update's timeout, a pane owed a trailing snapshot, a child waiting out `EXIT_DRAIN_GRACE`, a plugin's idle announcement, relaunch hold, or saturated command queue, and the size-owner release grace. Each type answers for its own clock, and the pass that observes an expired deadline clears it. A state that cannot promise that, such as a record whose snapshot has to wait for a clean chunk, offers no deadline, so an expired one can never spin the wait. `hub_diag`'s burst window is read when the next clear byte arrives rather than on a clock, and has no deadline.
+
 ## Shared state
 
 The session shares repository membership/order, active repository, pane set/content/order/title/confirmed size, and accent. Cursor, scroll, focus, fullscreen, search, and the TUI `Workspace` view state are client-local. The viewer shares only sidebar width, `upper_pct`, and per-project last view/maximize in `viewer.json` between browsers; these are separate from the TUI workspace file.

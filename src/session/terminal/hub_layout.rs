@@ -45,6 +45,8 @@ impl TerminalHub {
                 ownership_generation,
             },
         );
+        drop(pending);
+        self.wake.wake();
     }
 
     pub(super) fn discard_pending_resizes(&self, connection: u64) {

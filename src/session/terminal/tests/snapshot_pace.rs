@@ -68,6 +68,34 @@ fn the_pace_is_due_at_the_window_and_only_past_the_owed_cap() {
     );
 }
 
+/// The worker no longer ticks, so the pace has to say when it is next due: the
+/// end of the running window, and nothing once the pane owes nothing or its
+/// stream is mid-sequence.
+#[test]
+fn an_owed_pane_names_the_end_of_its_window_and_nothing_after_it() {
+    let now = Instant::now();
+    let mut tracker = snapshotted_pane(now);
+    assert_eq!(
+        tracker.next_deadline(),
+        None,
+        "a pane owing nothing has no trailing snapshot coming"
+    );
+
+    tracker.note_owed(PANE, 1);
+    assert_eq!(
+        tracker.next_deadline(),
+        Some(now + WINDOW),
+        "the trailing snapshot is due exactly one window after the last screen"
+    );
+
+    assert_eq!(tracker.settle_restless(&[PANE], now + WINDOW).len(), 1);
+    assert_eq!(
+        tracker.next_deadline(),
+        None,
+        "the pass that took it must leave no deadline behind"
+    );
+}
+
 /// A pane nothing has been snapshotted for has no window to wait out.
 #[test]
 fn a_pane_the_tracker_has_never_snapshotted_is_due_at_once() {

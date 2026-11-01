@@ -8,16 +8,31 @@ use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
-use std::thread;
 use std::time::{Duration, Instant};
 
+/// The fixed wait the worker used before it could be woken. Kept for the
+/// measurement that compares the two cadences, and for the plugin queue pace that
+/// preserves the old command drain rate.
 const POLL_INTERVAL: Duration = Duration::from_millis(8);
+
+/// Longest the worker waits with nothing to do. Only bounds the cost of a signal
+/// a producer failed to send; every pass that has work is owed a signal or a
+/// deadline, and both end the wait sooner.
+const IDLE_WAIT_CAP: Duration = Duration::from_secs(1);
 
 impl TerminalHub {
     pub(super) fn run(&self, cwd: &str, commands: Receiver<Command>, stop: Arc<AtomicBool>) {
         let mut backend = PtyBackend::new(cwd, self.shell.clone());
+        // The PTY reader and waiter threads report queued events rather than
+        // leaving this loop to poll for them.
+        backend.set_waker(Arc::clone(&self.wake));
         // Only the plugins some configured pane opted into are launched.
-        let mut plugins = Plugins::start(cwd, &self.plugins, &self.startup);
+        let mut plugins = Plugins::start(
+            cwd,
+            &self.plugins,
+            &self.startup,
+            Some(Arc::clone(&self.wake)),
+        );
         // What each pane's program has done to its terminal, so a client that
         // attaches later can be told rather than left to infer it from a replay.
         let mut modes = PaneModeTracker::default();
@@ -25,6 +40,8 @@ impl TerminalHub {
         let mut clears = ClearWatch::default();
 
         while !stop.load(Ordering::Acquire) {
+            #[cfg(test)]
+            self.probe.passes.fetch_add(1, Ordering::Relaxed);
             for pane in self.take_pending_closes() {
                 if !self.pane_is_live(pane) {
                     continue;
@@ -206,9 +223,28 @@ impl TerminalHub {
             // A sizing owner that disconnected is held for a grace, so that
             // switching repositories — which closes one socket and opens
             // another — does not re-fit every pane there and back. Nothing runs
-            // on its own to end that, so the tick does.
+            // on its own to end that, so the pass does.
             self.settle_size_owner(Instant::now());
-            thread::sleep(POLL_INTERVAL);
+            // A pass that left work undone — a command a full queue refused, a
+            // plugin that filled its per-tick budget — has already been signalled
+            // by whoever produced it, so the flag is what makes that pass follow
+            // this one. Everything else is on a clock, and `next_deadline` names
+            // the earliest of them.
+            #[cfg(test)]
+            let legacy_polling = self.probe.legacy_polling.load(Ordering::Acquire);
+            #[cfg(not(test))]
+            let legacy_polling = false;
+            let cap = if legacy_polling {
+                POLL_INTERVAL
+            } else {
+                IDLE_WAIT_CAP
+            };
+            let deadline = if legacy_polling {
+                None
+            } else {
+                self.next_deadline(&backend, &modes, &plugins, Instant::now())
+            };
+            self.wake.wait(deadline, cap);
         }
 
         // Ahead of the panes: a plugin child is not one of `PtyBackend`'s panes,
@@ -251,5 +287,7 @@ impl TerminalHub {
         // client left parked on one would keep an orphan chip whose cancel
         // nothing answers.
         super::hub_recovery::end_all_recoveries_locked(&mut state);
+        #[cfg(test)]
+        self.probe.done.store(true, Ordering::Release);
     }
 }

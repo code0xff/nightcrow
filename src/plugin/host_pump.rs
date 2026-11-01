@@ -6,6 +6,7 @@
 //! a pipe and reaps.
 
 use super::protocol::{MAX_LINE_BYTES, PluginCommand, decode_command, is_blank_line};
+use crate::platform::threading::WakeHandle;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{ChildStderr, ChildStdin, ChildStdout};
 use std::sync::mpsc::{Receiver, SyncSender};
@@ -38,7 +39,12 @@ pub(super) fn write_events(mut stdin: ChildStdin, rx: Receiver<String>, name: St
 }
 
 /// Decode commands off the plugin's stdout until EOF or nobody is listening.
-pub(super) fn read_commands(stdout: ChildStdout, tx: SyncSender<PluginCommand>, name: String) {
+pub(super) fn read_commands(
+    stdout: ChildStdout,
+    tx: SyncSender<PluginCommand>,
+    name: String,
+    waker: Option<WakeHandle>,
+) {
     let mut reader = BufReader::new(stdout);
     loop {
         match pull_line(&mut reader) {
@@ -50,6 +56,9 @@ pub(super) fn read_commands(stdout: ChildStdout, tx: SyncSender<PluginCommand>, 
                     Ok(command) => {
                         if tx.send(command).is_err() {
                             return;
+                        }
+                        if let Some(waker) = &waker {
+                            waker.wake();
                         }
                     }
                     Err(error) => {

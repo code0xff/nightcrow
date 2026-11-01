@@ -1,3 +1,4 @@
+use super::TerminalHub;
 use super::frame::TerminalFrame;
 use crate::backend::PaneId;
 use crate::runtime::emulator::PaneModes;
@@ -6,6 +7,20 @@ use std::collections::VecDeque;
 use std::sync::mpsc::TrySendError;
 
 use super::session::Client;
+
+impl TerminalHub {
+    /// Queue `command` for the worker and wake it to take it.
+    ///
+    /// Never blocks: the worker also writes to PTY masters, so a blocking send
+    /// here could wedge the connection thread that made the request.
+    pub(super) fn submit(&self, command: Command) -> Result<(), TrySendError<Command>> {
+        let queued = self.commands.try_send(command);
+        if queued.is_ok() {
+            self.wake.wake();
+        }
+        queued
+    }
+}
 
 pub enum Command {
     /// `command` is `Some` only for startup panes (run via `$SHELL -lc`);

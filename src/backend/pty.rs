@@ -2,6 +2,7 @@ use super::slot::{PaneSlot, PaneSlots};
 use super::{BackendEvent, PaneId, ResizeOutcome, TerminalBackend};
 use crate::config::ShellConfig;
 use crate::platform::process_tree::ProcessTree;
+use crate::platform::threading::WakeHandle;
 use anyhow::Result;
 use portable_pty::PtySize;
 use std::collections::BTreeMap;
@@ -18,6 +19,8 @@ mod io;
 mod spawn;
 
 mod reap;
+#[path = "pty_wakeup.rs"]
+mod wakeup;
 
 /// Reap window for PTY reader / wait threads. Bigger than the commit-log
 /// REAP_TIMEOUT because `read()` on a PTY master can stay blocked if a
@@ -110,6 +113,10 @@ pub struct PtyBackend {
     created: Vec<BackendEvent>,
     /// The shell every terminal pane is spawned with.
     pub(super) shell: ShellConfig,
+    /// Set by an owner that parks between passes, so the reader and waiter
+    /// threads below can tell it an event is queued. `None` leaves the owner
+    /// polling, which is what the attached TUI's backend does.
+    waker: Option<WakeHandle>,
 }
 
 impl PtyBackend {
@@ -121,6 +128,7 @@ impl PtyBackend {
             cwd: cwd.as_ref().to_path_buf(),
             created: Vec::new(),
             shell,
+            waker: None,
         }
     }
 

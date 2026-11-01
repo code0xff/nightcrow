@@ -5,8 +5,10 @@
 //! boundary.
 
 use super::{RELEASE_GRACE, Registration, ViewerId, audit};
+use crate::platform::threading::Wake;
 use crate::session::terminal::frame::{ServerMessage, TerminalFrame};
 use std::collections::HashMap;
+use std::sync::Weak;
 use std::sync::mpsc::SyncSender;
 use std::time::Instant;
 
@@ -32,6 +34,9 @@ pub(super) struct Inner {
     /// Every live connection, by the id the registrar handed out.
     announce: HashMap<u64, Announce>,
     next_connection: u64,
+    /// Each hub worker's wake signal. Held weakly: a repo whose hub is gone needs
+    /// no waking, and the entry goes with it.
+    pub(super) wakers: Vec<Weak<Wake>>,
 }
 
 impl Inner {
@@ -95,9 +100,11 @@ impl Inner {
         }
     }
 
-    pub(super) fn leave(&mut self, connection: u64, now: Instant) {
+    /// Reports whether this started the release grace, which is the one moment a
+    /// worker has to be woken to look at it.
+    pub(super) fn leave(&mut self, connection: u64, now: Instant) -> bool {
         let Some(gone) = self.announce.remove(&connection) else {
-            return;
+            return false;
         };
         let still_present = match self.present.get_mut(&gone.viewer) {
             Some(count) => {
@@ -108,14 +115,21 @@ impl Inner {
         };
         audit::left(&gone.viewer, connection, !still_present);
         if still_present {
-            return;
+            return false;
         }
         self.present.remove(&gone.viewer);
         self.arrival.retain(|v| v != &gone.viewer);
         self.activity.retain(|v| v != &gone.viewer);
         if self.owner.as_ref() == Some(&gone.viewer) {
             self.owner_absent_since = Some(now);
+            return true;
         }
+        false
+    }
+
+    /// When an absent owner's grace runs out, if one is running.
+    pub(super) fn next_deadline(&self) -> Option<Instant> {
+        self.owner_absent_since.map(|since| since + RELEASE_GRACE)
     }
 
     pub(super) fn claim(&mut self, connection: u64, now: Instant) {

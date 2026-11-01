@@ -137,13 +137,19 @@ impl PtyBackend {
 
         let (tx, rx) = mpsc::sync_channel(super::io::OUTPUT_EVENT_CAPACITY);
         let exit_tx = tx.clone();
+        let reader_waker = self.waker.clone();
+        let exit_waker = self.waker.clone();
         #[cfg(test)]
         let output_backpressured = Arc::new(AtomicBool::new(false));
         #[cfg(test)]
-        let reader_handle =
-            super::io::spawn_output_reader_observed(reader, tx, Arc::clone(&output_backpressured));
+        let reader_handle = super::io::spawn_output_reader_observed(
+            reader,
+            tx,
+            reader_waker,
+            Arc::clone(&output_backpressured),
+        );
         #[cfg(not(test))]
-        let reader_handle = super::io::spawn_output_reader(reader, tx);
+        let reader_handle = super::io::spawn_output_reader(reader, tx, reader_waker);
         let (input, writer_handle) = super::io::InputQueue::spawn(writer);
 
         // The child's death is reported, not just awaited: on Windows the
@@ -152,6 +158,9 @@ impl PtyBackend {
         let wait_handle = thread::spawn(move || {
             let _ = child.wait();
             let _ = exit_tx.send(PtyEvent::ChildExited);
+            if let Some(waker) = exit_waker {
+                waker.wake();
+            }
         });
 
         self.panes.insert(
