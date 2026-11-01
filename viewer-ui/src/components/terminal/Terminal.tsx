@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { memo, useCallback } from "react";
 import { planLayout } from "../../lib/terminal/terminalLayout";
 import { usePaneDrag } from "../../hooks/terminal/usePaneDrag";
 import { usePaneRecovery } from "../../hooks/terminal/usePaneRecovery";
@@ -28,7 +28,7 @@ import { renderedZoom } from "../../lib/terminal/zoom";
 import { attachLabel, attachStatus } from "../../lib/terminal/attachStatus";
 import { useScreenScale } from "../../hooks/ui/screenScale";
 
-export function TerminalPanel({
+function TerminalPanelView({
   repo,
   maximized,
   onToggleMaximized,
@@ -298,3 +298,12 @@ export function TerminalPanel({
     </section>
   );
 }
+
+/**
+ * The panel keeps its own xterm instances and scrollback, so a parent render
+ * must not reach it: a status event or a hot-highlight tick elsewhere in the
+ * page would otherwise re-render the terminal toolbar and every pane body.
+ * Its props are plain values and stable callbacks (`RepoShell`), which is what
+ * makes the comparison stop here.
+ */
+export const TerminalPanel = memo(TerminalPanelView);

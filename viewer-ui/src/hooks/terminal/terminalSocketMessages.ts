@@ -15,6 +15,7 @@ import type {
   TerminalReplayState,
 } from "../../lib/terminal/terminalReplay";
 import { queueReplayEnd } from "../../lib/terminal/terminalReplay";
+import { writeTerminalData } from "../../lib/terminal/terminalWrites";
 import { toast } from "../../lib/runtime/toast";
 import { applySizeOwnerUpdate } from "../../lib/terminal/sizeActivity";
 
@@ -70,7 +71,10 @@ export function handleTerminalSocketMessage(
   const view = context.viewsRef.current.get(frame.pane);
   if (view) {
     if (replayToken) view.replayGate.begin();
-    view.term.write(frame.data);
+    // Through the pane's backlog: bytes the parser has not drained yet are
+    // counted, and a frame past the high-water mark waits instead of growing
+    // xterm's queue without limit.
+    writeTerminalData(view.term, frame.data);
     return;
   }
   const queue = context.pendingRef.current.get(frame.pane) ?? [];
@@ -88,6 +92,8 @@ function handleControlMessage(
       context.setLink("live");
       context.replayRef.current.active = true;
       context.replayRef.current.panes.clear();
+      context.replayRef.current.order.length = 0;
+      context.replayRef.current.zoomed = false;
       context.setReplayLeft(message.panes);
       return;
     case "replay_complete":
@@ -100,11 +106,25 @@ function handleControlMessage(
       const pane = message.pane;
       if (context.replayRef.current.active) {
         context.replayRef.current.panes.set(pane, Symbol());
+        const order = context.replayRef.current.order;
+        if (!order.includes(pane)) order.push(pane);
       }
       context.ptySizesRef.current.set(pane, {
         rows: message.rows,
         cols: message.cols,
       });
+      // A pane that was kept across a reconnect already has an emulator, and
+      // the replay that follows was drawn against this grid. A pane the panel
+      // opens now is resized from the same value when its view appears
+      // (`useTerminalViews`); this is the other half of that promise. The
+      // terminal is still empty here — the replay's screen comes next.
+      const kept = context.viewsRef.current.get(pane);
+      if (
+        kept &&
+        (kept.term.rows !== message.rows || kept.term.cols !== message.cols)
+      ) {
+        kept.term.resize(message.cols, message.rows);
+      }
       const title = message.title;
       if (title) {
         context.setTitles((current) => ({
@@ -112,7 +132,13 @@ function handleControlMessage(
           [pane]: title,
         }));
       }
-      context.setPanes((current) => [...current, pane]);
+      // A reconnect keeps the panes on screen while the replay restores them,
+      // so what was on the old connection must not be appended to a second
+      // time. A pane that is already known stays where it is; the replay's
+      // order is applied in full at its completion below.
+      context.setPanes((current) =>
+        current.includes(pane) ? current : [...current, pane],
+      );
       context.setReplayLeft((left) => (left > 0 ? left - 1 : 0));
       if (
         message.client != null &&
@@ -176,6 +202,7 @@ function handleControlMessage(
       context.setPanes((current) => reconcileOrder(current, message.order));
       return;
     case "zoomed":
+      context.replayRef.current.zoomed = true;
       context.zoomAskedRef.current = undefined;
       context.setZoomed(message.pane ?? null);
       return;
@@ -215,4 +242,32 @@ function completeReplay(context: TerminalMessageContext): void {
       }
     });
   }
+  // The replay's `created` frames are the whole truth for this connection, in
+  // their order: a reconnect may have outlived a pane, gained one, or had the
+  // panes reordered by another screen. Replacing the list here also drops the
+  // cells of panes that are gone (with their emulators) before any live frame
+  // can name them.
+  const replayed = replay.order.slice();
+  context.setPanes((current) =>
+    current.length === replayed.length &&
+    current.every((pane, index) => pane === replayed[index])
+      ? current
+      : replayed,
+  );
+  // A page that reconnects keeps its zoom through the gap; if the replay did
+  // not announce one, the pane it named is gone and the grid is current.
+  if (!replay.zoomed) context.setZoomed(null);
+  context.setActive((current) =>
+    current !== null && replayed.includes(current) ? current : null,
+  );
+  context.setTitles((current) => {
+    const stale = Object.keys(current).some((pane) => !replayed.includes(Number(pane)));
+    if (!stale) return current;
+    const next: Record<number, string> = {};
+    for (const pane of replayed) {
+      const title = current[pane];
+      if (title !== undefined) next[pane] = title;
+    }
+    return next;
+  });
 }

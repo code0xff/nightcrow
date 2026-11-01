@@ -2,9 +2,14 @@ import { useLayoutEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { LinkState } from "../../lib/terminal/attachStatus";
 import type { RecoveryByPane } from "../../lib/terminal/recovery";
+import { RECONNECT_STABLE_MS, reconnectDelay } from "../../lib/terminal/reconnect";
 import { viewerId } from "../../lib/runtime/viewerId";
 import type { PaneView } from "../../lib/terminal/terminalLayout";
 import type { PaneSize } from "../../api/terminal";
+import {
+  resetTerminalWrites,
+  terminalWrites,
+} from "../../lib/terminal/terminalWrites";
 import type {
   PendingTerminalWrite,
   TerminalReplayState,
@@ -82,17 +87,30 @@ export function useTerminalSocket({
   useLayoutEffect(() => {
     let closedByUs = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    // How long the current connection has to stay up before the next loss
+    // starts over from the base wait.
+    let stableTimer: ReturnType<typeof setTimeout> | undefined;
+    // Retry number for the connection that is not up yet (`reconnect.ts`).
+    let attempt = 0;
     // Whether this page has ever been attached to *this* repository's session.
     // A link lost after that is a reconnect, which is a different thing to be
     // told than a first attach; the effect restarts per repository, so
     // switching projects says "connecting" again rather than inheriting the
     // previous project's link.
     let everLive = false;
+    // Whether a connection has been opened before in this effect run. A later
+    // one is a reconnect to the same session, not a project switch: its panes
+    // are the same panes and their emulators are reused.
+    let attachedOnce = false;
     const linkTo = (state: LinkState) => {
       if (state === "live") everLive = true;
       setLink(state);
     };
     const waiting = (): LinkState => (everLive ? "reconnecting" : "connecting");
+    const stopStableTimer = () => {
+      if (stableTimer) clearTimeout(stableTimer);
+      stableTimer = undefined;
+    };
     const messageContext = {
       repo,
       clientIdRef,
@@ -118,17 +136,24 @@ export function useTerminalSocket({
     };
 
     const disposeAll = () => {
-      viewsRef.current.forEach((view) => view.term.dispose());
+      viewsRef.current.forEach((view) => {
+        resetTerminalWrites(view.term);
+        view.term.dispose();
+      });
       viewsRef.current.clear();
       pendingRef.current.clear();
       replayRef.current.active = false;
       replayRef.current.panes.clear();
+      replayRef.current.order.length = 0;
       ptySizesRef.current.clear();
       askedSizesRef.current.clear();
       desiredSizesRef.current.clear();
     };
 
     const connect = () => {
+      stopStableTimer();
+      const reuse = attachedOnce;
+      attachedOnce = true;
       clientIdRef.current = null;
       ownsSizeRef.current = false;
       sizeOwnerGenerationRef.current = null;
@@ -138,13 +163,39 @@ export function useTerminalSocket({
       // switch has moved to pane ids that mean something else.
       zoomAskedRef.current = undefined;
       setPending(null);
-      setPanes([]);
-      setActive(null);
-      setZoomed(null);
-      setTitles({});
       // Reports are keyed by pane id, which is repository-local.
       setRecovery({});
-      disposeAll();
+      if (reuse) {
+        // Keep the emulators. A replay is an absolute repaint of each pane's
+        // screen — the hub composes its full history and screen record — so a
+        // reset gives it the empty buffer a fresh attach would have, without
+        // rebuilding every pane's DOM, parser, and fit for bytes that are
+        // already on their way. The reset is queued behind bytes the dead
+        // connection left parsing, and the replay queues behind it, so nothing
+        // from the old screen can land on the new one.
+        for (const view of viewsRef.current.values()) {
+          const writes = terminalWrites(view.term);
+          writes.clear();
+          writes.barrier(() => view.term.reset());
+        }
+        // Bytes held for a pane that had no cell yet belong to the dead
+        // connection; the replay carries that pane's screen again.
+        pendingRef.current.clear();
+        replayRef.current.active = false;
+        replayRef.current.panes.clear();
+        replayRef.current.order.length = 0;
+        ptySizesRef.current.clear();
+        askedSizesRef.current.clear();
+        desiredSizesRef.current.clear();
+      } else {
+        // A new repository (or the first attach): nothing on screen belongs to
+        // it.
+        setPanes([]);
+        setActive(null);
+        setZoomed(null);
+        setTitles({});
+        disposeAll();
+      }
 
       const scheme = location.protocol === "https:" ? "wss:" : "ws:";
       // The page names itself, so the session can tell one screen's sockets
@@ -156,6 +207,14 @@ export function useTerminalSocket({
       socket.binaryType = "arraybuffer";
       socketRef.current = socket;
 
+      socket.onopen = () => {
+        if (socketRef.current !== socket) return;
+        stopStableTimer();
+        stableTimer = setTimeout(() => {
+          stableTimer = undefined;
+          attempt = 0;
+        }, RECONNECT_STABLE_MS);
+      };
       socket.onmessage = (event) => {
         // Pane ids are per repository, so a frame that was already on its way
         // when the project changed would land on whatever pane holds that id
@@ -165,11 +224,14 @@ export function useTerminalSocket({
       };
       socket.onclose = () => {
         if (closedByUs) return;
+        stopStableTimer();
         // Said here rather than left to `connect`: the panes of the socket that
-        // just went stay on screen for the second in between, and typing into
-        // them reaches nothing.
+        // just went stay on screen in the meantime, and typing into them
+        // reaches nothing.
         linkTo(waiting());
-        reconnectTimer = setTimeout(connect, 1000);
+        const delay = reconnectDelay(attempt);
+        attempt += 1;
+        reconnectTimer = setTimeout(connect, delay);
       };
     };
 
@@ -178,6 +240,7 @@ export function useTerminalSocket({
     return () => {
       closedByUs = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      stopStableTimer();
       socketRef.current?.close();
       disposeAll();
     };
