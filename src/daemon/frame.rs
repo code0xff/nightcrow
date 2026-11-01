@@ -91,6 +91,9 @@ pub(super) fn encode_server(
     }
 }
 
+/// Frames up to this size are written from one contiguous buffer.
+const COALESCE_FRAME_BYTES: usize = 4096;
+
 /// Write one frame: kind byte, big-endian length, payload. Does not flush —
 /// flushing here would turn every batch into one syscall per frame.
 pub fn write_frame<W: Write>(writer: &mut W, frame: &Frame) -> Result<()> {
@@ -100,12 +103,20 @@ pub fn write_frame<W: Write>(writer: &mut W, frame: &Frame) -> Result<()> {
             frame.payload.len()
         );
     }
-    // Header and payload are offered as separate slices to one vectored call,
-    // so the frame still reaches the peer as one contiguous message without
-    // first being copied into a buffer of its own.
     let mut header = [0u8; 5];
     header[0] = frame.kind as u8;
     header[1..].copy_from_slice(&(frame.payload.len() as u32).to_be_bytes());
+    // A small frame is copied into one buffer: a writer without a native
+    // vectored write (the Windows attach socket) would otherwise send the
+    // header and payload as two writes. A large payload is offered as a second
+    // slice instead, so it is not copied again to be framed.
+    if frame.payload.len() <= COALESCE_FRAME_BYTES {
+        let mut out = Vec::with_capacity(header.len() + frame.payload.len());
+        out.extend_from_slice(&header);
+        out.extend_from_slice(&frame.payload);
+        writer.write_all(&out).context("writing a daemon frame")?;
+        return Ok(());
+    }
     write_all_vectored(
         writer,
         &mut [IoSlice::new(&header), IoSlice::new(&frame.payload)],

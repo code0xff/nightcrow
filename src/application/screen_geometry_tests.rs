@@ -42,25 +42,6 @@ fn the_screen_is_measured_once_and_then_reused() {
 }
 
 #[test]
-fn a_resize_event_replaces_the_cached_screen_without_measuring() {
-    let mut geometry = ScreenGeometry::default();
-    let calls = Cell::new(0);
-    geometry
-        .screen(measuring(&calls, Size::new(120, 50)))
-        .unwrap();
-
-    geometry.resized(80, 24);
-
-    assert_eq!(
-        geometry
-            .screen(measuring(&calls, Size::new(120, 50)))
-            .unwrap(),
-        Rect::new(0, 0, 80, 24)
-    );
-    assert_eq!(calls.get(), 1, "the event already carried the new size");
-}
-
-#[test]
 fn forgetting_the_size_measures_the_backend_again() {
     let mut geometry = ScreenGeometry::default();
     let calls = Cell::new(0);
@@ -92,14 +73,27 @@ fn a_zero_dimension_never_collapses_the_cached_screen() {
         .screen(measuring(&calls, Size::new(100, 40)))
         .unwrap();
 
-    geometry.resized(0, 0);
-    geometry.resized(120, 0);
-
+    geometry.forget_size();
     assert_eq!(
-        geometry.screen(measuring(&calls, Size::new(5, 5))).unwrap(),
+        geometry.screen(measuring(&calls, Size::new(0, 0))).unwrap(),
         SCREEN,
         "a transient zero keeps the last usable screen"
     );
+    assert_eq!(
+        geometry
+            .screen(measuring(&calls, Size::new(120, 0)))
+            .unwrap(),
+        SCREEN
+    );
+    // Still stale after a zero, so the next tick measures again and adopts a
+    // usable size as soon as the backend reports one.
+    assert_eq!(
+        geometry
+            .screen(measuring(&calls, Size::new(90, 30)))
+            .unwrap(),
+        Rect::new(0, 0, 90, 30)
+    );
+    assert_eq!(calls.get(), 4);
 }
 
 #[test]

@@ -17,7 +17,7 @@ fn leader_key() -> KeyEvent {
 }
 
 #[test]
-fn a_resize_event_updates_the_cached_screen_size_without_a_measurement() {
+fn a_resize_event_re_measures_the_backend_on_the_next_tick() {
     let mut app = crate::app::tests::app_with_fake_backend();
     app.terminal.create_pane_now().unwrap();
     app.poll_terminal();
@@ -44,11 +44,9 @@ fn a_resize_event_updates_the_cached_screen_size_without_a_measurement() {
 
     assert!(outcome.is_none());
     assert!(redraw.is_dirty(), "a resize still asks for a frame");
-    // No measurement: the event carried the size, and the layout below is built
-    // for it rather than for the pre-resize screen.
-    let screen = geometry
-        .screen(|| unreachable!("a resize event must not send the loop back to the backend"))
-        .unwrap();
+    // The event's own dimensions are not trusted: the next tick measures the
+    // backend the frame is drawn on, so the layout below follows its size.
+    let screen = geometry.screen(|| Ok(terminal.size()?)).unwrap();
     assert_eq!(screen, Rect::new(0, 0, 50, 20));
     let app = workspace.active().unwrap();
     let resized = geometry.pane_sizes(app, &cfg.layout, screen).to_vec();

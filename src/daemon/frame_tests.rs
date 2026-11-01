@@ -82,6 +82,18 @@ fn a_writer_that_accepts_little_at_a_time_still_gets_the_whole_frame() {
     };
     write_frame(&mut writer, &frame).expect("a trickling writer still takes the frame");
     assert_eq!(writer.written, [2, 0, 0, 0, 5, 1, 2, 3, 4, 5]);
+
+    // Past the coalescing size the header and payload go out as two slices.
+    let payload: Vec<u8> = (0..20_000u32).map(|i| i as u8).collect();
+    let mut writer = Trickle {
+        written: Vec::new(),
+    };
+    write_frame(&mut writer, &Frame::terminal(payload.clone()))
+        .expect("a trickling writer still takes a large frame");
+    let mut expected = vec![2];
+    expected.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    expected.extend_from_slice(&payload);
+    assert_eq!(writer.written, expected);
 }
 
 #[test]

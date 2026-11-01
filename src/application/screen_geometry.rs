@@ -4,9 +4,10 @@
 //! terminal's size to lay the panes out and keep their PTYs honest. Asking the
 //! backend for the size is a syscall and laying the panes out allocates, so
 //! both are cached here and rebuilt only when something they depend on moved.
-//! A resize event carries the new size with it; a full repaint re-measures,
-//! because `Terminal::clear` is the point where a missed resize would otherwise
-//! leave panes at a stale size for good.
+//! A resize event or a full repaint marks the size stale so the next tick
+//! re-measures: the frame is drawn at the backend's own size, which an event's
+//! dimensions do not always match, and `Terminal::clear` is the point where a
+//! missed resize would otherwise leave panes at a stale size for good.
 
 use crate::app::App;
 use crate::backend::PaneId;
@@ -19,6 +20,9 @@ use ratatui::layout::{Rect, Size};
 #[derive(Debug, Default)]
 pub(crate) struct ScreenGeometry {
     screen: Option<Rect>,
+    /// Set by [`ScreenGeometry::forget_size`]; the last usable `screen` is kept
+    /// as the fallback for a transient zero measurement.
+    stale: bool,
     sizes: Option<CachedSizes>,
     #[cfg(test)]
     rebuilds: usize,
@@ -30,23 +34,19 @@ impl ScreenGeometry {
         &mut self,
         measure: impl FnOnce() -> anyhow::Result<Size>,
     ) -> anyhow::Result<Rect> {
-        if let Some(screen) = self.screen {
+        if let Some(screen) = self.screen
+            && !self.stale
+        {
             return Ok(screen);
         }
         let size = measure()?;
         Ok(self.record(size.width, size.height))
     }
 
-    /// Apply the size a resize event reported, so the tick that receives it
-    /// lays the panes out for the new screen without asking the backend.
-    pub(crate) fn resized(&mut self, width: u16, height: u16) {
-        self.record(width, height);
-    }
-
     /// Forget the size so the next [`ScreenGeometry::screen`] measures the
     /// backend again.
     pub(crate) fn forget_size(&mut self) {
-        self.screen = None;
+        self.stale = true;
     }
 
     fn record(&mut self, width: u16, height: u16) -> Rect {
@@ -57,6 +57,7 @@ impl ScreenGeometry {
         }
         let screen = Rect::new(0, 0, width, height);
         self.screen = Some(screen);
+        self.stale = false;
         screen
     }
 

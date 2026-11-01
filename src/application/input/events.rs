@@ -23,8 +23,12 @@ where
     B::Error: Send + Sync + 'static,
 {
     let outcome = match event {
-        Event::Resize(width, height) => {
-            geometry.resized(width, height);
+        // Re-measured on the next tick rather than taken from the event: the
+        // frame is drawn at the backend's own size, and on Windows the event's
+        // dimensions can differ from it, which would size the PTYs off what is
+        // shown.
+        Event::Resize(_, _) => {
+            geometry.forget_size();
             redraw.request(RedrawCause::Resize);
             None
         }
