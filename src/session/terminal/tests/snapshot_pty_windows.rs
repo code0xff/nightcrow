@@ -58,16 +58,19 @@ fn paint_hub(dir: &tempfile::TempDir) -> Arc<TerminalHub> {
 }
 
 /// Everything `session` is sent for `pane` up to `marker`, with the child's cursor
-/// queries answered as a client emulator would.
-fn read_until(session: &TerminalSession, pane: PaneId, marker: &str) -> Vec<u8> {
+/// queries answered as a client emulator would. Reports how many output frames it
+/// arrived in, so a paint the PTY coalesced into one read cannot pass for a paced one.
+fn read_until(session: &TerminalSession, pane: PaneId, marker: &str) -> (Vec<u8>, usize) {
     let deadline = Instant::now() + SHELL_TEST_DEADLINE;
     let mut out = Vec::new();
     let mut answered = 0;
+    let mut frames = 0;
     while Instant::now() < deadline {
         if let Some(frame) = session.next_frame(Duration::from_millis(100))
             && let TerminalFrame::Output { pane: p, data } = frame
             && p == pane
         {
+            frames += 1;
             out.extend(data);
             let asked = out
                 .windows(CURSOR_QUERY.len())
@@ -85,7 +88,7 @@ fn read_until(session: &TerminalSession, pane: PaneId, marker: &str) -> Vec<u8> 
             .windows(marker.len())
             .any(|window| window == marker.as_bytes())
         {
-            return out;
+            return (out, frames);
         }
     }
     panic!(
@@ -115,15 +118,30 @@ fn a_real_alternate_screen_program_replays_exactly_after_a_paced_window() {
     let pane = created_pane(&created).expect("no pane id");
 
     // More than one pace window of paint, then a marker.
-    let live = read_until(&original, pane, MARKER);
+    let (live, frames) = read_until(&original, pane, MARKER);
     let reattached = attach(&hub);
-    let replay = read_until(&reattached, pane, MARKER);
+    let (replay, _) = read_until(&reattached, pane, MARKER);
     hub.stop();
 
+    assert!(
+        frames > 1,
+        "the paint must reach the worker in more than one read, or it never crossed a tick"
+    );
+    assert!(
+        live.windows(8).any(|window| window == b"frame 29"),
+        "the fixture must have painted its whole window, got: {:?}",
+        String::from_utf8_lossy(&live)
+    );
     assert!(
         live.windows(8).any(|window| window == b"\x1b[?1049h"),
         "the fixture must have taken the alternate screen, got: {:?}",
         String::from_utf8_lossy(&live)
+    );
+    assert!(
+        replay.windows(7).any(|window| window == b"\x1b[m\x1b[2J"),
+        "the replayed record must carry a screen, not only the bytes that followed one, \
+         got: {:?}",
+        String::from_utf8_lossy(&replay)
     );
     let from_live = rendered(&live);
     let from_replay = rendered(&replay);
