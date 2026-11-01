@@ -23,8 +23,8 @@ const NO_HISTORY: usize = 0;
 /// pane. A client connecting between two of them is replayed the older screen
 /// plus the bytes recorded since. Replay is exact for the state that screen
 /// carries; the state it does not — scroll region, saved cursor, origin mode,
-/// charset, and autowrap as of the snapshot — stays exposed in the tail for at
-/// most one interval after the pane's last write. The paced pass takes a
+/// charset, insert mode, and autowrap as of the snapshot — stays exposed in the
+/// tail for at most one interval after the pane's last write. The paced pass takes a
 /// trailing snapshot once a pane that still owes bytes falls idle, so a quiet
 /// pane does not keep that state exposed indefinitely.
 const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(250);
