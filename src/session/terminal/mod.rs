@@ -18,6 +18,7 @@
 pub mod frame;
 mod hub_attention;
 mod hub_connect;
+mod hub_connect_guard;
 mod hub_diag;
 #[cfg(test)]
 mod hub_diag_tests;
@@ -33,6 +34,7 @@ mod hub_relaunch;
 mod hub_reload;
 mod hub_reload_hosts;
 mod hub_replay;
+mod hub_replay_record;
 mod hub_run;
 mod hub_zoom;
 mod session;

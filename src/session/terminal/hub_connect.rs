@@ -2,6 +2,7 @@
 //! front of one, and the two sends that address a single client.
 
 use super::frame::{ServerMessage, TerminalFrame};
+use super::hub_connect_guard::RegistrationGuard;
 use super::hub_helpers::queue_locked;
 use super::hub_replay::{PaneReplay, ReplayQueue, replay_pane};
 use super::session::{Client, ReportBudget};
@@ -11,45 +12,6 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::time::Instant;
-
-/// Removes a client `connect` registered but will never hand a session to.
-///
-/// Registration and the session that unregisters it are separated by the whole
-/// replay, so a panic in between would leave the client in the broadcast list
-/// with its replay gate closed: nothing would ever open the gate, every later
-/// frame would be held until the client overflowed and was cut off, and its size
-/// registration would stay behind for good. Disarmed once the session exists.
-struct RegistrationGuard<'a> {
-    hub: &'a TerminalHub,
-    id: u64,
-    /// The size-ownership registration this connection made, once it has one.
-    connection: Option<u64>,
-    armed: bool,
-}
-
-impl Drop for RegistrationGuard<'_> {
-    fn drop(&mut self) {
-        if !self.armed {
-            return;
-        }
-        // A poisoned lock is taken anyway: this runs while unwinding, and a
-        // second panic here would abort the process instead of unwinding it.
-        {
-            let mut state = self
-                .hub
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            state.clients.retain(|client| client.id != self.id);
-        }
-        // Off the hub's lock, in the order `disconnect` uses: the sizing is the
-        // session's business and may have to tell clients on other hubs.
-        if let Some(connection) = self.connection {
-            self.hub.ownership.leave(connection, Instant::now());
-            self.hub.discard_pending_resizes(connection);
-        }
-    }
-}
 
 impl TerminalHub {
     /// Register a client and put the current terminals in front of it before it
@@ -172,12 +134,7 @@ impl TerminalHub {
         });
         // Registered but not yet reachable by a session: from here until the
         // return below, an unwind has to take the record with it.
-        let mut registered = RegistrationGuard {
-            hub: self,
-            id,
-            connection: None,
-            armed: true,
-        };
+        let mut registered = RegistrationGuard::new(self, id);
         drop(state);
 
         // Off the lock: framing a whole replay copies its bytes into frames, and
@@ -222,7 +179,7 @@ impl TerminalHub {
         // knew there were panes would have nothing to fit.
         let registration = self.ownership.join(viewer, arriving, tx, Instant::now());
         let connection = registration.connection;
-        registered.connection = Some(connection);
+        registered.registered(connection);
         if let Some(index) = state.clients.iter().position(|client| client.id == id) {
             state.clients[index].connection = Some(connection);
             // Everything the worker produced while the replay was being framed,
@@ -261,7 +218,7 @@ impl TerminalHub {
             );
         }
 
-        registered.armed = false;
+        registered.disarm();
         TerminalSession {
             hub: Arc::clone(self),
             id,
