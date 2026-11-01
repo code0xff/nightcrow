@@ -98,6 +98,25 @@ impl TerminalHub {
             .map(|p| (p.screen.len(), p.since.len()))
     }
 
+    /// Whether `needle` is among the last bytes the hub recorded for `pane`,
+    /// either in its history ring or in the tail owed on top of its screen.
+    pub(crate) fn pane_recorded_recently(&self, pane: PaneId, needle: &[u8]) -> bool {
+        let state = self.state.lock().expect("terminal state poisoned");
+        let Some(p) = state.panes.iter().find(|p| p.id == pane) else {
+            return false;
+        };
+        let window = needle.len() * 4;
+        let ends_with = |bytes: &std::collections::VecDeque<u8>| {
+            let tail: Vec<u8> = bytes
+                .iter()
+                .skip(bytes.len().saturating_sub(window))
+                .copied()
+                .collect();
+            tail.windows(needle.len()).any(|w| w == needle)
+        };
+        ends_with(&p.scrollback) || ends_with(&p.since)
+    }
+
     pub fn client_count(&self) -> usize {
         self.state
             .lock()

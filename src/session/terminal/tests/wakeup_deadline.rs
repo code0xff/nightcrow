@@ -14,8 +14,8 @@ use super::{
 };
 use crate::backend::PaneId;
 use crate::session::size_owner::RELEASE_GRACE;
-use crate::session::terminal::TerminalSession;
 use crate::session::terminal::frame::{ClientMessage, TerminalFrame};
+use crate::session::terminal::{FrameWait, TerminalHub, TerminalSession};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -205,58 +205,52 @@ fn a_drain_left_over_at_its_budget_does_not_wait_for_a_signal() {
     hub.set_wait_cap(HIGH_CAP);
     let (session, pane) = start_pane(&hub);
 
-    let took = read_burst(&session, pane);
+    let took = read_burst(&hub, &session, pane);
     assert!(
         took < BURST_DEADLINE,
-        "the burst's tail took {took:?} to reach the client: the drain waited out \
+        "the burst's tail took {took:?} to reach the hub's record: the drain waited out \
          the {HIGH_CAP:?} cap instead of coming back for the events it left queued"
     );
     hub.stop();
 }
 
-/// Read `session` until the burst's marker arrives, keeping only a short tail and
-/// answering the cursor queries a PowerShell child waits on: a multi-megabyte
-/// burst must not be rescanned on every frame. Returns when the deadline passes
-/// without the marker, so the caller owns the verdict.
-fn read_burst(session: &TerminalSession, pane: PaneId) -> Duration {
+/// Wait until the hub has drained the burst: its marker is in the pane's record,
+/// or the pane is gone because the exit queued behind the marker was read. The
+/// verdict comes from the hub rather than the client, because a client that falls
+/// a queue's depth behind a multi-megabyte burst is cut off, which says nothing
+/// about the drain. Meanwhile `session` is read to answer the cursor queries a
+/// PowerShell child waits on. Returns when the deadline passes without the marker,
+/// so the caller owns the verdict.
+fn read_burst(hub: &TerminalHub, session: &TerminalSession, pane: PaneId) -> Duration {
     let started = Instant::now();
-    let mut tail: Vec<u8> = Vec::new();
     let mut answered = 0;
+    let mut reading = true;
     while started.elapsed() < BURST_DEADLINE {
-        let Some(frame) = session.next_frame(Duration::from_millis(100)) else {
-            continue;
-        };
-        let TerminalFrame::Output {
-            pane: event_pane,
-            data,
-        } = frame
-        else {
-            continue;
-        };
-        if event_pane != pane {
+        if hub.pane_record(pane).is_none() || hub.pane_recorded_recently(pane, BURST_MARKER) {
+            return started.elapsed();
+        }
+        if !reading {
+            thread::sleep(Duration::from_millis(20));
             continue;
         }
-        let asked = data
-            .windows(4)
-            .filter(|window| *window == b"\x1b[6n")
-            .count();
+        let data = match session.wait_frame(Duration::from_millis(20)) {
+            FrameWait::Frame(TerminalFrame::Output {
+                pane: event_pane,
+                data,
+            }) if event_pane == pane => data,
+            FrameWait::Closed => {
+                reading = false;
+                continue;
+            }
+            _ => continue,
+        };
+        let asked = data.windows(4).filter(|window| *window == b"[6n").count();
         while answered < asked {
             session.dispatch(ClientMessage::Input {
                 pane,
-                data: "\x1b[1;1R".to_string(),
+                data: "[1;1R".to_string(),
             });
             answered += 1;
-        }
-        tail.extend_from_slice(&data);
-        if tail.len() > BURST_MARKER.len() * 2 {
-            let excess = tail.len() - BURST_MARKER.len() * 2;
-            tail.drain(..excess);
-        }
-        if tail
-            .windows(BURST_MARKER.len())
-            .any(|window| window == BURST_MARKER)
-        {
-            return started.elapsed();
         }
     }
     started.elapsed()
