@@ -257,6 +257,17 @@ fn the_snapshot_spells_exactly_the_cells_the_default_pen_calls_written() {
 /// cell out itself; "barriered" pins that construction inside the call, which is
 /// what the removal is worth when it cannot be lifted.
 ///
+/// Measured per cell over 65000 cells and 20 passes:
+///
+/// | build | hoisted | as written | barriered |
+/// |---|---|---|---|
+/// | release | 2 ns | 2 ns | 4 ns |
+/// | debug | 59 ns | 94 ns | 88 ns |
+///
+/// The optimiser already lifted the constant, so release builds gain nothing and
+/// lose nothing; an unoptimised build gains about a third, which is the shape of the
+/// work the hoist removes.
+///
 /// ```text
 /// cargo test --release measure_blank_test -- --ignored --nocapture
 /// ```
