@@ -2,8 +2,8 @@
 
 use super::super::terminal_connection::{WAKES, run};
 use super::super::terminal_liveness::Timing;
-use super::super::terminal_pipe::{GUARD_WAKES, READ_GUARD};
-use super::fixture::{Wired, short, wired, wired_with};
+use super::super::terminal_pipe::{GUARD_WAKES, JOINS, READ_GUARD};
+use super::fixture::{Wired, short, wired, wired_panicking, wired_with};
 use crate::session::terminal::TerminalFrame;
 use std::net::Shutdown;
 use std::sync::Arc;
@@ -251,6 +251,37 @@ fn a_page_that_never_reads_is_cut_off_by_the_hub() {
         "the connection did not end after the hub cut it off"
     );
     runner.join().expect("the connection thread panicked");
+    hub.stop();
+}
+
+/// A panic in the writer must still release the hub client and join both helper
+/// threads: `run` owns them, and an unwind never reaches the end of its loop.
+#[test]
+fn a_panicking_writer_still_releases_the_connection() {
+    let before = JOINS.load(Ordering::Relaxed);
+    let Wired {
+        served,
+        link,
+        session,
+        hub,
+        ..
+    } = wired_panicking();
+
+    let runner = std::thread::spawn(move || run(served, link, session, Timing::default()));
+    assert!(
+        runner.join().is_err(),
+        "the writer was supposed to panic, so the loop did not end"
+    );
+
+    assert_eq!(
+        hub.client_count(),
+        0,
+        "a panicking writer must still give up its hub client"
+    );
+    assert!(
+        JOINS.load(Ordering::Relaxed) >= before + 2,
+        "both helper threads must be joined on the way out"
+    );
     hub.stop();
 }
 

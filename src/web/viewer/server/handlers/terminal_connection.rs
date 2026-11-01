@@ -94,6 +94,10 @@ impl Connection {
         loop {
             #[cfg(test)]
             WAKES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            #[cfg(test)]
+            if std::mem::take(&mut self.link.panic_writer) {
+                panic!("test: a terminal writer panicked");
+            }
 
             // Everything already waiting leaves in one flush — until a write
             // stalls. Then nothing more leaves the hub: tungstenite's write
@@ -252,18 +256,16 @@ impl Connection {
         }
     }
 
-    /// Say goodbye, end both helper threads, and let the hub release the client.
+    /// Say goodbye. The helper threads and the hub client are released by
+    /// [`Link`]'s `Drop`, which runs on every exit path, including a panic.
     ///
     /// The close frame and the socket shutdown are best effort: the socket may
-    /// be the reason this is running at all. Waiting for the helper threads is
-    /// not — it is what returns the reader's socket and the hub's queue, so
-    /// nothing of this connection outlives it.
+    /// be the reason this is running at all.
     fn finish(mut self, end: End) {
         end.note();
         if let End::Silent(_) = end {
             let _ = self.ws.close(None);
         }
         self.ws.get_ref().cut_off();
-        self.link.close(&self.session);
     }
 }

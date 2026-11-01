@@ -35,6 +35,14 @@ pub(super) fn wired() -> Wired {
     wired_with(GUARD)
 }
 
+/// The same connection, whose writer panics on its first pass: a test can then
+/// show that unwinding still releases what the connection owns.
+pub(super) fn wired_panicking() -> Wired {
+    let mut wired = wired();
+    wired.link.panic_writer = true;
+    wired
+}
+
 /// The same connection, with a reader guard the caller picks: the tests use
 /// [`GUARD`], while the idle measurement uses the production value so the
 /// number it reports is the one a real socket costs.
