@@ -79,7 +79,7 @@ impl Drop for PtyPane {
         // Cancel queued input before terminating the process; a blocked
         // in-flight write is handled by the reaper's bounded worker join.
         drop(self.input.take());
-        let reaper = reap::PaneReaper {
+        let mut reaper = reap::PaneReaper {
             master: self.master.take(),
             killer: self.killer.take(),
             process_tree: self.process_tree.take(),
@@ -87,6 +87,7 @@ impl Drop for PtyPane {
             reader: self.reader_handle.take(),
             waiter: self.wait_handle.take(),
         };
+        reaper.terminate();
         crate::platform::threading::spawn_reaper("pane-reaper", move || reaper.reap());
     }
 }

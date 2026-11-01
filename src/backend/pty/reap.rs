@@ -1,8 +1,11 @@
 //! The half of a pane's teardown that waits.
 //!
 //! Dropping a pane happens on the hub's worker thread, which also carries every
-//! other pane's output. Terminating a process tree and giving three workers
-//! their reap window there stalled them; the handles move here instead.
+//! other pane's output. Closing the PTY master (which can block on ConPTY) and
+//! giving three workers their reap window there stalled them; the handles move
+//! here instead. Termination itself only signals, so `PtyPane::drop` does it
+//! before handing off: a process that exits right after closing a pane must not
+//! leave the pane's children running because this thread never got scheduled.
 
 use super::PTY_REAP_TIMEOUT;
 use crate::platform::process_tree::ProcessTree;
@@ -20,9 +23,9 @@ pub(super) struct PaneReaper {
 }
 
 impl PaneReaper {
-    pub(super) fn reap(mut self) {
-        // Terminate the pane's process boundary before the PTY handles and
-        // waiter are reaped, so child jobs cannot outlive an explicit close.
+    /// Terminate the pane's process boundary. Only signals, so it runs on the
+    /// dropping thread before the waiting half is handed off.
+    pub(super) fn terminate(&mut self) {
         if let Some(tree) = self.process_tree.as_ref()
             && let Err(error) = tree.terminate()
         {
@@ -33,6 +36,9 @@ impl PaneReaper {
         if let Some(killer) = self.killer.as_mut() {
             let _ = killer.kill();
         }
+    }
+
+    pub(super) fn reap(mut self) {
         // Close the PTY boundary before joining; platform teardown normally
         // releases blocked system calls, and every join remains bounded.
         self.master.take();
