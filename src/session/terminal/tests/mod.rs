@@ -18,6 +18,7 @@ mod plugins;
 mod reattach;
 mod recovery;
 mod recovery_replay;
+mod replay_budget;
 mod replay_complete;
 mod replay_delivery;
 mod replay_fidelity;
