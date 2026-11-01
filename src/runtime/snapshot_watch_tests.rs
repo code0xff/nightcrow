@@ -1,4 +1,4 @@
-use super::{Roots, any_matters, changed_paths, external_git_dir};
+use super::{IgnoredDirs, Roots, any_matters, changed_paths, external_git_dir};
 use crate::test_util::{make_linked_worktree, make_repo};
 use notify::event::{AccessKind, AccessMode, CreateKind, Event, EventKind, Flag, ModifyKind};
 use std::path::{Path, PathBuf};
@@ -14,10 +14,14 @@ fn under(root: &str, relative: &str) -> Vec<PathBuf> {
     vec![Path::new(root).join(relative)]
 }
 
+fn any_matters_now(repo: Option<&git2::Repository>, roots: &Roots, paths: &[PathBuf]) -> bool {
+    any_matters(repo, roots, paths, &mut IgnoredDirs::default())
+}
+
 fn wakes_the_reader(root: &str, event: notify::Result<Event>) -> bool {
     let repo = crate::test_util::open_repo(root);
     changed_paths(event)
-        .is_some_and(|paths| any_matters(Some(&repo), &Roots::of(Path::new(root)), &paths))
+        .is_some_and(|paths| any_matters_now(Some(&repo), &Roots::of(Path::new(root)), &paths))
 }
 
 fn at(kind: EventKind, root: &str, relative: &str) -> notify::Result<Event> {
