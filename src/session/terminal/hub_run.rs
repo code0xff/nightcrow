@@ -10,9 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
-/// The fixed wait the worker used before it could be woken. Kept for the
-/// measurement that compares the two cadences, and for the plugin queue pace that
-/// preserves the old command drain rate.
+/// The fixed wait the worker used before it could be woken. Kept so the ignored
+/// measurement can reproduce that cadence and count the passes it cost.
 const POLL_INTERVAL: Duration = Duration::from_millis(8);
 
 /// Longest the worker waits with nothing to do. Only bounds the cost of a signal
