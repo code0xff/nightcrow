@@ -12,6 +12,8 @@ mod io;
 mod lifecycle;
 #[path = "pty_tests/links.rs"]
 mod links;
+#[path = "pty_tests/reap.rs"]
+mod reap;
 #[path = "pty_tests/relaunch.rs"]
 mod relaunch;
 

@@ -3,7 +3,7 @@
 //! and [`IDLE_READ_INTERVAL`](super::IDLE_READ_INTERVAL).
 
 use super::{IDLE_READ_INTERVAL, MIN_READ_INTERVAL, REOPEN_REPO_EVERY_READS, SnapshotMsg, read};
-use crate::runtime::snapshot_watch::{self, Roots, Wake};
+use crate::runtime::snapshot_watch::{self, IgnoredDirs, Roots, Wake};
 use notify::RecommendedWatcher;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -46,6 +46,8 @@ struct ReadState {
     reads_since_open: u32,
     changed: bool,
     last_read: Option<Instant>,
+    /// Directories whose ignore status was already asked since the last read.
+    ignored: IgnoredDirs,
 }
 
 impl Worker {
@@ -61,6 +63,7 @@ impl Worker {
             // has nothing to render until it arrives.
             changed: true,
             last_read: None,
+            ignored: IgnoredDirs::default(),
         };
 
         loop {
@@ -81,7 +84,12 @@ impl Worker {
             }
 
             if awake && state.changed && due(state.last_read) {
-                if !self.read_once(&mut state, &watch) {
+                let alive = self.read_once(&mut state, &watch);
+                // The read is the point at which every path seen so far has been
+                // accounted for, and an ignore rule may have changed along with
+                // any of them.
+                state.ignored.clear();
+                if !alive {
                     // The receiver is gone: nobody is left to read this.
                     return;
                 }
@@ -122,7 +130,13 @@ impl Worker {
             // Already owed a read: asking git about every further path would be
             // work whose answer cannot change what happens next.
             Wake::Changed(paths) => {
-                if !state.changed && snapshot_watch::any_matters(state.repo.as_ref(), roots, &paths)
+                if !state.changed
+                    && snapshot_watch::any_matters(
+                        state.repo.as_ref(),
+                        roots,
+                        &paths,
+                        &mut state.ignored,
+                    )
                 {
                     state.changed = true;
                 }

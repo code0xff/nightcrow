@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn field_accessors_return_what_a_full_snapshot_carries() {
+    // The session watcher reads these on every tick and must not have to copy
+    // the per-project lists to learn one of them.
+    let dir = tempfile::TempDir::new().unwrap();
+    let store = PrefsStore::at(dir.path().join("viewer.json"));
+
+    assert_eq!(store.accent(), 0);
+    assert_eq!(store.active_repo(), None);
+
+    store.set_accent(4);
+    store.set_active_repo("/w/api".to_string());
+    store.set_upper_pct(40);
+
+    let snapshot = store.get();
+    assert_eq!(store.accent(), snapshot.accent);
+    assert_eq!(store.active_repo(), snapshot.active_repo);
+}
+
+#[test]
 fn an_accent_round_trips_through_the_file() {
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("nested").join("viewer.json");
