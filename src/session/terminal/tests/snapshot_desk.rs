@@ -131,7 +131,7 @@ impl Desk {
 }
 
 /// One cell as a client would draw it, through the same surface the renderers use.
-fn drawn(emulator: &PaneEmulator) -> Vec<String> {
+pub(super) fn drawn(emulator: &PaneEmulator) -> Vec<String> {
     let view = emulator.view();
     let (rows, cols) = view.size();
     let mut out = Vec::with_capacity(usize::from(rows) * usize::from(cols));

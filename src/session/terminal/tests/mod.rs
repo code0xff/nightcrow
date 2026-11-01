@@ -26,6 +26,7 @@ mod size_owner_resize_race;
 mod snapshot_cycles;
 mod snapshot_desk;
 mod snapshot_pace;
+mod snapshot_pty_windows;
 mod snapshot_throttle;
 mod startup;
 mod startup_policy;
