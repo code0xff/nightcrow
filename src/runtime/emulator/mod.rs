@@ -11,7 +11,7 @@ use std::rc::Rc;
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::term::test::TermSize;
-use alacritty_terminal::term::{Config, MIN_COLUMNS, MIN_SCREEN_LINES, Term, TermMode};
+use alacritty_terminal::term::{MIN_COLUMNS, MIN_SCREEN_LINES, Term, TermMode};
 use alacritty_terminal::vte::ansi::Processor;
 
 /// Side effects surfaced by `PaneEmulator::process` for the caller to act on.
@@ -87,31 +87,18 @@ pub struct PaneEmulator {
     term: Term<EventProxy>,
     processor: Processor,
     proxy: EventProxy,
-    boundary: boundary::StreamBoundary,
+    /// `None` for an emulator that never answers [`at_boundary`](Self::at_boundary);
+    /// only the session hub anchors snapshots into a pane's stream.
+    boundary: Option<boundary::StreamBoundary>,
 }
 
 impl PaneEmulator {
-    /// Create an emulator with a `rows` x `cols` screen (clamped to the
-    /// minimum grid alacritty supports) and `scrollback_lines` of history.
-    pub fn new(rows: u16, cols: u16, scrollback_lines: usize) -> Self {
-        let config = Config {
-            scrolling_history: scrollback_lines,
-            ..Config::default()
-        };
-        let proxy = EventProxy::default();
-        let term = Term::new(config, &term_size(rows, cols), proxy.clone());
-        Self {
-            term,
-            processor: Processor::new(),
-            proxy,
-            boundary: boundary::StreamBoundary::default(),
-        }
-    }
-
     /// Feed raw PTY output through the emulator; returns the side effects for
     /// the caller to act on.
     pub fn process(&mut self, bytes: &[u8]) -> EmulatorEvents {
-        self.boundary.feed(bytes);
+        if let Some(boundary) = self.boundary.as_mut() {
+            boundary.feed(bytes);
+        }
         self.processor.advance(&mut self.term, bytes);
         self.take_events()
     }
@@ -178,8 +165,16 @@ impl PaneEmulator {
     /// [`boundary`]). The two halves answer separate questions — a caller
     /// forcing a snapshot over a torn seam may still never take one of a grid
     /// with bytes missing.
+    ///
+    /// Only an emulator built by [`new`](Self::new) can answer: one built by
+    /// [`without_boundary_tracking`](Self::without_boundary_tracking) never
+    /// looked at the stream, so it reports `false` and trips a debug assertion.
     pub fn at_boundary(&self) -> bool {
-        self.screen_current() && self.boundary.at_boundary()
+        let Some(boundary) = &self.boundary else {
+            debug_assert!(false, "a client emulator does not track stream boundaries");
+            return false;
+        };
+        self.screen_current() && boundary.at_boundary()
     }
 
     /// Whether the grid holds everything processed. False while a synchronized
@@ -260,6 +255,7 @@ fn term_size(rows: u16, cols: u16) -> TermSize {
 }
 
 mod boundary;
+mod construct;
 mod links;
 mod links_paths;
 mod modes;
@@ -271,7 +267,11 @@ pub use modes::PaneModes;
 pub use view::{CellView, ScreenView};
 
 #[cfg(test)]
+mod boundary_cost_tests;
+#[cfg(test)]
 mod boundary_tests;
+#[cfg(test)]
+mod client_tests;
 #[cfg(test)]
 mod links_tests;
 #[cfg(test)]
