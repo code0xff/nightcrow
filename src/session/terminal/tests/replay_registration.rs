@@ -32,17 +32,20 @@ fn a_guard_that_fires_after_registration_releases_the_sizing() {
     let id = 42;
     let (tx, _rx): (mpsc::SyncSender<TerminalFrame>, _) =
         mpsc::sync_channel(CLIENT_QUEUE_DEPTH + 1);
-    hub.state
-        .lock()
-        .expect("terminal state poisoned")
-        .clients
-        .push(Client {
-            id,
-            tx: tx.clone(),
-            replay_held: Some(Vec::new()),
-            socket: None,
-            connection: None,
-        });
+    let (bystander, _bystander_rx): (mpsc::SyncSender<TerminalFrame>, _) =
+        mpsc::sync_channel(CLIENT_QUEUE_DEPTH + 1);
+    {
+        let mut state = hub.state.lock().expect("terminal state poisoned");
+        for (client, tx) in [(id, tx.clone()), (id + 1, bystander)] {
+            state.clients.push(Client {
+                id: client,
+                tx,
+                replay_held: Some(Vec::new()),
+                socket: None,
+                connection: None,
+            });
+        }
+    }
     let registration = ownership.join(
         ViewerId::Browser("unwound".to_string()),
         true,
@@ -60,8 +63,13 @@ fn a_guard_that_fires_after_registration_releases_the_sizing() {
 
     assert_eq!(
         hub.client_count(),
-        0,
-        "an unwound connection must leave the broadcast list"
+        1,
+        "only the connection that unwound must leave the broadcast list"
+    );
+    assert_eq!(
+        hub.state.lock().expect("terminal state poisoned").clients[0].id,
+        id + 1,
+        "a connection that did not unwind must be left alone"
     );
     assert!(
         !ownership.owns(registration.connection),
