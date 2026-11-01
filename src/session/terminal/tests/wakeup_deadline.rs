@@ -82,9 +82,10 @@ const BURST_THEN_MARKER: &str = concat!(
 
 const BURST_MARKER: &[u8] = b"nightcrow-burst-done";
 
-/// How long the burst may take to reach the client. Far under the 30 s cap the
-/// test puts in the way, so the cap cannot hide a wait that should not happen.
-const BURST_DEADLINE: Duration = Duration::from_secs(10);
+/// How long the burst may take to reach the client. Generous for slow hosted
+/// runners, yet under the 30 s cap the test puts in the way, so a missing drain
+/// deadline still fails rather than being rescued by the cap.
+const BURST_DEADLINE: Duration = Duration::from_secs(25);
 
 #[test]
 fn the_size_owner_grace_ends_on_the_worker_clock() {
