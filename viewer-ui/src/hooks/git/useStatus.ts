@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, subscribeStatus, type Status } from "../../api";
+import { api, subscribeStatus, type ChangedFile, type Status } from "../../api";
 import type { Pane, Tab } from "../../types";
 import { hasWorkingCopy, showsText } from "../../lib/content/otherFace";
 
@@ -9,6 +9,15 @@ export type { Pane, Tab };
  *  tree cannot be read — an empty one carrying why, so the lists can say so
  *  instead of waiting on a status that will not come. */
 export type RepoStatus = Status & { unavailable?: string };
+
+/** What a working-tree row says about the file's content. The server sends a
+ *  status event with every row's mtimes, so a refresh of the open diff is
+ *  worthwhile only when this changes for its row. */
+function rowKey(row: ChangedFile): string {
+  return [row.index, row.worktree, row.mtime ?? "", row.old_path ?? ""].join(
+    "\u0000",
+  );
+}
 
 export interface UseStatusArgs {
   repo: string | null;
@@ -43,6 +52,13 @@ export function useStatus({
   paneRef.current = pane;
   const tabRef = useRef(tab);
   tabRef.current = tab;
+  // The row the open diff was last fetched — or, when it had just been opened
+  // from the same row, adopted — from. A status event for some other file must
+  // leave the diff alone.
+  const diffRowRef = useRef<{ path: string; key: string } | null>(null);
+  // A refresh already asked for by this row, so two events naming the same
+  // change do not fetch it twice.
+  const pendingRef = useRef<{ path: string; key: string } | null>(null);
 
   // Clear stale data on repo/auth changes, but retain it across resume
   // resubscription. Before paint, not after: the render that switches project
@@ -63,13 +79,31 @@ export function useStatus({
   useEffect(() => {
     if (!repo || !status) return;
     const current = paneRef.current;
-    if (tabRef.current !== "status" || current.kind !== "diff") return;
+    if (tabRef.current !== "status" || current.kind !== "diff") {
+      diffRowRef.current = null;
+      return;
+    }
     const path = current.value.path;
     const row = status.files.find((f) => f.path === path);
     if (!row) {
+      diffRowRef.current = null;
       setPane({ kind: "empty" });
       return;
     }
+    const key = rowKey(row);
+    const seen = diffRowRef.current;
+    if (seen?.path === path && seen.key === key) return;
+    // Opened just now (or replaced by another path): whatever put it there
+    // read the same working tree, so this row is its baseline. Only a later
+    // move of that row makes the diff stale.
+    if (seen?.path !== path) {
+      diffRowRef.current = { path, key };
+      return;
+    }
+    if (pendingRef.current?.path === path && pendingRef.current.key === key) {
+      return;
+    }
+    pendingRef.current = { path, key };
     const request = paneRequestRef.current;
     let active = true;
     // The counter alone is insufficient because a refresh can start before a new pane is rendered.
@@ -91,7 +125,8 @@ export function useStatus({
         // deleted. Stated rather than carried over from the old pane: this path
         // only ever refreshes the status view's working-tree diff, and a stale
         // commit source would outlive what it named.
-        if (stillOurs())
+        if (stillOurs()) {
+          diffRowRef.current = { path, key };
           setPane({
             kind: "diff",
             value: v,
@@ -100,9 +135,18 @@ export function useStatus({
                 ? { kind: "workdir", path }
                 : undefined,
           });
+        }
       })
       .catch((err) => {
         if (stillOurs()) handle(err);
+      })
+      .finally(() => {
+        // The next event naming the same change gets a fresh attempt if this
+        // one failed; one that arrives while it is still running does not ask
+        // twice.
+        if (pendingRef.current?.path === path && pendingRef.current.key === key) {
+          pendingRef.current = null;
+        }
       });
     return () => {
       active = false;
