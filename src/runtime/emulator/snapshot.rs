@@ -61,8 +61,12 @@ impl Pen {
 /// Held to *every* attribute, not just the background: a space carrying a
 /// foreground colour looks the same but is not the same cell, and erasing it
 /// would hand a client a screen that differs from the one it replaces.
-fn is_blank(cell: &Cell) -> bool {
-    cell.c == ' ' && cell.zerowidth().is_none() && Pen::of(cell) == Pen::of(&Cell::default())
+///
+/// `blank` is the pen of [`Cell::default`], taken once per snapshot: this runs
+/// on every cell of each row's reverse scan, and building the pen again per
+/// tested cell cloned its hyperlink just as often.
+fn is_blank(cell: &Cell, blank: &Pen) -> bool {
+    cell.c == ' ' && cell.zerowidth().is_none() && Pen::of(cell) == *blank
 }
 
 fn rendered_flags() -> Flags {
@@ -92,6 +96,9 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
     // attributes spanning a row boundary still costs one escape.
     let mut pen: Option<Pen> = None;
     let mut hyperlink: Option<Hyperlink> = None;
+    // Compared against by `is_blank` and left behind by every erase: the pen a
+    // cell that was never written carries.
+    let blank_pen = Pen::of(&Cell::default());
 
     for row in 0..rows {
         // Positioned rather than reached by a newline. Writing the last column
@@ -105,11 +112,11 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
         // hundred.
         let last = (0..cols)
             .rev()
-            .find(|&col| !is_blank(&grid[Point::new(Line(row as i32), Column(col))]));
+            .find(|&col| !is_blank(&grid[Point::new(Line(row as i32), Column(col))], &blank_pen));
         let Some(last) = last else {
             clear_hyperlink(&mut out, &mut hyperlink);
             out.push_str(ERASE_TO_END_OF_ROW);
-            pen = Some(Pen::of(&Cell::default()));
+            pen = Some(blank_pen.clone());
             continue;
         };
         for col in 0..=last {
@@ -159,7 +166,7 @@ pub(super) fn screen_snapshot(term: &Term<EventProxy>) -> Vec<u8> {
         if last + 1 < cols {
             clear_hyperlink(&mut out, &mut hyperlink);
             out.push_str(ERASE_TO_END_OF_ROW);
-            pen = Some(Pen::of(&Cell::default()));
+            pen = Some(blank_pen.clone());
         }
     }
 
@@ -298,3 +305,7 @@ fn write_indexed(out: &mut String, index: u8, basic: u8, bright: u8, extended: u
         let _ = write!(out, ";{extended};5;{index}");
     }
 }
+
+#[cfg(test)]
+#[path = "snapshot_pen_tests.rs"]
+mod pen_tests;

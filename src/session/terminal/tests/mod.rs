@@ -23,6 +23,7 @@ mod screen_replay;
 mod scrollback_depth;
 mod size_owner;
 mod size_owner_resize_race;
+mod snapshot_throttle;
 mod startup;
 mod startup_policy;
 mod wire;
