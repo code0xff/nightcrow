@@ -36,12 +36,34 @@ fn frame(n: usize) -> Vec<u8> {
     format!("\x1b[2;1Hframe {n:04}\x1b[K").into_bytes()
 }
 
+/// A truecolour image renderer's worst case: every cell written and every cell a
+/// different colour, which is what makes a snapshot expensive to take.
+fn dense_paint(rows: u16, cols: u16) -> Vec<u8> {
+    use std::fmt::Write as _;
+    let mut paint = String::from("\x1b[?1049h");
+    for row in 0..rows {
+        let _ = write!(paint, "\x1b[{};1H", row + 1);
+        for col in 0..cols {
+            let _ = write!(
+                paint,
+                "\x1b[38;2;{};{};{}mX",
+                row % 255,
+                col % 255,
+                (row + col) % 255
+            );
+        }
+    }
+    paint.into_bytes()
+}
+
 /// A pane driven the way the worker drives one, without a process behind it.
 struct Desk {
     hub: Arc<TerminalHub>,
     tracker: PaneModeTracker,
     /// What an attached client renders, fed the same bytes the pane produced.
     live: PaneEmulator,
+    rows: u16,
+    cols: u16,
     now: Instant,
     /// When the desk was built, so a test can say how far into the window it is.
     origin: Instant,
@@ -55,13 +77,19 @@ struct Desk {
 
 impl Desk {
     fn new(dir: &tempfile::TempDir) -> Self {
+        Self::sized(dir, ROWS, COLS)
+    }
+
+    fn sized(dir: &tempfile::TempDir, rows: u16, cols: u16) -> Self {
         let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
-        hub.register_pane(PANE, ROWS, COLS, None, None);
+        hub.register_pane(PANE, rows, cols, None, None);
         let now = Instant::now();
         Self {
             hub,
             tracker: PaneModeTracker::default(),
-            live: PaneEmulator::new(ROWS, COLS, 0),
+            live: PaneEmulator::new(rows, cols, 0),
+            rows,
+            cols,
             now,
             origin: now,
             restless: false,
@@ -136,7 +164,7 @@ fn drawn(emulator: &PaneEmulator) -> Vec<String> {
 /// took.
 fn replay(desk: &Desk) -> (PaneEmulator, usize) {
     let client = attach(&desk.hub);
-    let mut emulator = PaneEmulator::new(ROWS, COLS, 0);
+    let mut emulator = PaneEmulator::new(desk.rows, desk.cols, 0);
     let mut bytes = 0;
     while let Some(frame) = client.next_frame(QUEUED) {
         if let TerminalFrame::Output { pane, data } = frame
@@ -259,7 +287,8 @@ fn a_record_past_the_crowded_cap_keeps_its_replay_bounded() {
 
 /// Snapshots a busy pane costs per second, with and without the pace. Not a
 /// behavioural test and not run with the suite; kept because it is the reason the
-/// pace exists, and rerun after changing the pass:
+/// pace exists, and rerun after changing the pass. Two panes: an ordinary 24x80
+/// screen, and the 130x500 truecolour screen a snapshot is most expensive for.
 ///
 /// ```text
 /// cargo test --release measure_snapshots_per_second -- --ignored --nocapture
@@ -269,29 +298,36 @@ fn a_record_past_the_crowded_cap_keeps_its_replay_bounded() {
 fn measure_snapshots_per_second_for_a_busy_pane() {
     // Two seconds of the worker's tick.
     let ticks = usize::try_from(Duration::from_secs(2).as_millis() / TICK.as_millis()).unwrap();
-    let mut measured = Vec::new();
-    for paced in [false, true] {
-        let dir = tempfile::TempDir::new().unwrap();
-        let mut desk = Desk::new(&dir);
-        desk.paced = paced;
-        desk.output(ENTER);
-        desk.tick();
-        let started = Instant::now();
-        for n in 0..ticks {
-            desk.output(&frame(n));
+    for (rows, cols) in [(ROWS, COLS), (130, 500)] {
+        let paint = if (rows, cols) == (ROWS, COLS) {
+            ENTER.to_vec()
+        } else {
+            dense_paint(rows, cols)
+        };
+        let mut measured = Vec::new();
+        for paced in [false, true] {
+            let dir = tempfile::TempDir::new().unwrap();
+            let mut desk = Desk::sized(&dir, rows, cols);
+            desk.paced = paced;
+            desk.output(&paint);
             desk.tick();
+            let started = Instant::now();
+            for n in 0..ticks {
+                desk.output(&frame(n));
+                desk.tick();
+            }
+            let elapsed = started.elapsed();
+            let replay_bytes = assert_replay_matches_live(&desk);
+            measured.push((paced, desk.snapshots, elapsed, replay_bytes));
+            desk.hub.stop();
         }
-        let elapsed = started.elapsed();
-        let replay_bytes = assert_replay_matches_live(&desk);
-        measured.push((paced, desk.snapshots, elapsed, replay_bytes));
-        desk.hub.stop();
-    }
-    for (paced, snapshots, elapsed, replay_bytes) in measured {
-        let label = if paced { "paced" } else { "every tick" };
-        eprintln!(
-            "{label}: {snapshots} snapshots over {ticks} ticks ({:.0}/s), \
-             {elapsed:?} of work, replay {replay_bytes} bytes",
-            snapshots as f64 / 2.0
-        );
+        for (paced, snapshots, elapsed, replay_bytes) in measured {
+            let label = if paced { "paced" } else { "every tick" };
+            eprintln!(
+                "{rows}x{cols} {label}: {snapshots} snapshots over {ticks} ticks \
+                 ({:.0}/s), {elapsed:?} of work, replay {replay_bytes} bytes",
+                snapshots as f64 / 2.0
+            );
+        }
     }
 }
