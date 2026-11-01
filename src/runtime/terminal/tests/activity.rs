@@ -140,6 +140,11 @@ fn hidden_pane_replay_output_and_resize_do_not_request_a_frame() {
         !hidden_resize,
         "resizing a hidden pane cannot change the frame"
     );
+    assert_eq!(
+        state.confirmed_content_size.get(&hidden),
+        Some(&crate::runtime::emulator::effective_size(10, 20)),
+        "a hidden pane must still adopt the confirmed size"
+    );
 
     let visible_resize = poll_frame(
         &mut state,

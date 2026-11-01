@@ -91,7 +91,8 @@ impl TerminalState {
                 // to wrap where the child does, so it follows.
                 BackendEvent::Resized { pane, rows, cols } => {
                     let visible = self.pane_is_visible(pane);
-                    frame_changed |= visible && self.confirm_resize(pane, rows, cols);
+                    let resized = self.confirm_resize(pane, rows, cols);
+                    frame_changed |= visible && resized;
                 }
                 // Only for a pane this client holds, like `Exited`: a marker
                 // for a pane that is not on any of this client's tabs would
