@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import type { PaneView } from "../../lib/terminal/terminalLayout";
 import type { PaneViewMode } from "../../lib/terminal/paneViewMode";
 import { terminalFontOptions } from "../../lib/terminal/termFont";
@@ -18,6 +19,7 @@ import { sendTerminalMessage, type PaneSize } from "../../api/terminal";
 import type { ScreenScale } from "../ui/screenScale";
 import { createTitleThrottle } from "../../lib/terminal/titleThrottle";
 import type { TitleThrottle } from "../../lib/terminal/titleThrottle";
+import { enableWebglRenderer } from "../../lib/terminal/webglRenderer";
 
 interface UseTerminalViewsArgs {
   panes: number[];
@@ -165,6 +167,12 @@ export function useTerminalViews({
         titles.push(cleaned);
       });
       term.open(body);
+      // An optional GPU path over the DOM renderer xterm just opened. Loaded
+      // per terminal rather than once for the page: the addon paints one xterm's
+      // canvas, and a pane opened later is as likely to be the one a context
+      // budget can still afford. `enableWebglRenderer` leaves this pane on the
+      // renderer it already has when WebGL is unavailable or later lost.
+      enableWebglRenderer(term, () => new WebglAddon());
       // Before a byte is written: what follows was drawn against the PTY's
       // grid. An opened xterm starts at 80×24, and a hidden parser also needs
       // the confirmed grid before it consumes output; parsing at the default
