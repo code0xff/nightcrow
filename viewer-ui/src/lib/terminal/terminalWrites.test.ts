@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Terminal } from "@xterm/xterm";
+import { Terminal } from "@xterm/xterm";
 import { TerminalWrites } from "./terminalWrites";
 
 interface QueuedWrite {
@@ -100,5 +100,30 @@ describe("TerminalWrites", () => {
     const next = bytes(1);
     queue.write(next);
     expect(fake.writes.at(-1)?.data).toBe(next);
+  });
+
+  it("resets a real emulator between writes and keeps what follows", async () => {
+    // The reconnect path resets a kept terminal from a write callback and then
+    // hands the replay to the same queue. Both have to land in order.
+    const term = new Terminal();
+    const encode = (text: string) => new TextEncoder().encode(text);
+    try {
+      const queue = new TerminalWrites(term);
+      await new Promise<void>((resolve) => {
+        queue.write(encode("old screen\r\n"));
+        queue.barrier(() => term.reset());
+        queue.write(encode("replayed screen\r\n"));
+        queue.barrier(resolve);
+      });
+
+      const buffer = term.buffer.active;
+      const text = Array.from({ length: buffer.length }, (_, row) =>
+        buffer.getLine(row)?.translateToString(true) ?? "",
+      ).join("\n");
+      expect(text).toContain("replayed screen");
+      expect(text).not.toContain("old screen");
+    } finally {
+      term.dispose();
+    }
   });
 });
