@@ -2,6 +2,7 @@ import type { Decorations } from "../../hooks/git/useLogDecorations";
 import { useEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { focusRegionAttrs } from "../../lib/shortcuts/shortcutDom";
+import { useScrollViewport } from "../../hooks/ui/useScrollViewport";
 import { useTree } from "../../hooks/git/useTree";
 import { buildTreeRows } from "../../lib/repository/tree";
 import { ancestorDirs, toggled } from "../../lib/repository/treeCache";
@@ -28,8 +29,11 @@ export interface SidebarProps {
   setFilterOpen: React.Dispatch<React.SetStateAction<boolean>>;
   status: RepoStatus | null;
   files: ChangedFile[];
-  now: number;
   hotWindowMs: number;
+  /** The server's clock minus this device's, as `/api/repos` reported it. The
+   *  hot clock applies it where the rows are drawn (`StatusList`), so a tick
+   *  re-renders the list rather than the whole page. */
+  clockSkewMs: number;
   openDiff: (path: string) => void;
   openFile: (path: string) => void;
   openCommit: (oid: string) => void;
@@ -90,8 +94,8 @@ export function Sidebar(props: SidebarProps) {
     setFilterOpen,
     status,
     files,
-    now,
     hotWindowMs,
+    clockSkewMs,
     openDiff,
     openFile,
     openCommit,
@@ -128,6 +132,10 @@ export function Sidebar(props: SidebarProps) {
   } = props;
 
   const tree = useTree({ repo, authed, tab, filter, filterOpen, handle });
+  // One scroll container holds whichever list is showing, so its measured
+  // viewport feeds the large-list windows below.
+  const listRef = useRef<HTMLUListElement>(null);
+  const { viewport, refresh: refreshViewport } = useScrollViewport(listRef);
   const treeSearching = tab === "tree" && filterOpen && filter !== "";
   const treeRows = buildTreeRows(tree.treeChildren, tree.treeExpanded);
 
@@ -222,13 +230,18 @@ export function Sidebar(props: SidebarProps) {
           className="mx-2 mb-1 shrink-0 rounded-sm bg-ink-850 px-2 py-1 outline-none placeholder:text-ink-400 focus:ring-1 focus:ring-accent"
         />
       )}
-      <ul className="nc-content min-h-0 flex-1 overflow-auto">
+      <ul
+        ref={listRef}
+        onScroll={refreshViewport}
+        className="nc-content min-h-0 flex-1 overflow-auto"
+      >
         {tab === "status" && (
           <StatusList
             status={status}
             files={files}
-            now={now}
             hotWindowMs={hotWindowMs}
+            clockSkewMs={clockSkewMs}
+            viewport={viewport}
             openDiff={openDiff}
           />
         )}
@@ -242,6 +255,7 @@ export function Sidebar(props: SidebarProps) {
             logDone={logDone}
             logStalled={logStalled}
             logPagingPaused={logPagingPaused}
+            viewport={viewport}
             setLogStalled={setLogStalled}
             logSentinelRef={logSentinelRef}
             openCommitFiles={openCommitFiles}

@@ -59,10 +59,17 @@ export function shownTab(active: number | null, panes: number[]): number | null 
 /**
  * The cell a pane gets in tabs mode.
  *
- * Every pane is stacked at the panel's full size and the hidden ones are merely
- * invisible, not `display: none`. Each pane keeps the full panel box, so it can
- * stay fitted to the shared grid while hidden; switching tabs needs no resize,
- * SIGWINCH or repaint.
+ * Every pane is stacked at the panel's full size and keeps that box whether or
+ * not it is the tab on screen, so switching tabs needs no resize, SIGWINCH or
+ * repaint.
+ *
+ * A hidden pane is moved out of the stack's box rather than merely made
+ * invisible. xterm pauses its renderer from an IntersectionObserver, and an
+ * element at `inset: 0` still intersects even when `visibility: hidden` — so a
+ * background pane would keep painting every frame it receives. A transform
+ * moves the cell without changing its size, so its box (and therefore its
+ * fitted grid) is kept. The stack container has to clip it for the move to
+ * count as leaving the viewport; see `STACKED_STACK_CLASS`.
  */
 export function stackedCellStyle(shown: boolean): CSSProperties {
   return {
@@ -70,5 +77,16 @@ export function stackedCellStyle(shown: boolean): CSSProperties {
     inset: 0,
     display: "flex",
     visibility: shown ? "visible" : "hidden",
+    // A hair past its own width, so the moved cell shares no edge with the
+    // stack: an intersection of zero area is not an intersection, but relying
+    // on that boundary would be needlessly exact.
+    transform: shown ? undefined : "translateX(calc(-100% - 2px))",
   };
 }
+
+/**
+ * The container tabs are stacked in. It clips, which is what makes
+ * `stackedCellStyle`'s out-of-view transform hide the cell from
+ * IntersectionObserver instead of leaving it overlapping the page.
+ */
+export const STACKED_STACK_CLASS = "relative h-full overflow-hidden";

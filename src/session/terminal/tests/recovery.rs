@@ -227,7 +227,7 @@ fn a_hold_that_runs_out_of_time_reports_the_pane_it_gave_up_on() {
     // counting down to a moment that has passed.
     let f = fixture();
     let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
-    let mut plugins = Plugins::start(&f.cwd(), &[reporter(PLUGIN, &f)], &[opt_in()]);
+    let mut plugins = Plugins::start(&f.cwd(), &[reporter(PLUGIN, &f)], &[opt_in()], None);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
         .expect("open a pane");

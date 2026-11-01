@@ -138,14 +138,17 @@ pub struct RepoSummary {
 /// [`FrameKind::Terminal`](super::frame::FrameKind::Terminal) frame rather than
 /// as JSON: PTY output is not guaranteed valid UTF-8 — a multi-byte sequence is
 /// routinely split across reads — and a text encoding would corrupt it.
+///
+/// `data` is generic over its storage so a relay can move in the buffer the hub
+/// shares between clients, while a decoded frame still owns its copy.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TerminalOutput {
+pub struct TerminalOutput<D = Vec<u8>> {
     pub repo: String,
     pub pane: PaneId,
-    pub data: Vec<u8>,
+    pub data: D,
 }
 
-impl TerminalOutput {
+impl<D: AsRef<[u8]>> TerminalOutput<D> {
     /// `[repo len][repo][pane id][bytes]`, little-endian to match the hub's own
     /// binary framing. Refuses long repository ids rather than truncating the
     /// payload into a frame the receiver would misinterpret.
@@ -158,14 +161,17 @@ impl TerminalOutput {
                 u8::MAX
             );
         };
-        let mut out = Vec::with_capacity(1 + repo.len() + 4 + self.data.len());
+        let data = self.data.as_ref();
+        let mut out = Vec::with_capacity(1 + repo.len() + 4 + data.len());
         out.push(len);
         out.extend_from_slice(repo);
         out.extend_from_slice(&self.pane.to_le_bytes());
-        out.extend_from_slice(&self.data);
+        out.extend_from_slice(data);
         Ok(out)
     }
+}
 
+impl TerminalOutput {
     /// Read one back, or `None` when the header is truncated or its repository
     /// id is not valid UTF-8. Only the attaching client decodes: output travels
     /// one way.

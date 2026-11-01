@@ -4,6 +4,7 @@ use crate::application::input::dispatch::KeyOutcome;
 use crate::application::input::events::dispatch_input_event;
 use crate::application::input::ready::{InputControl, process_ready_input};
 use crate::application::redraw::RedrawState;
+use crate::application::screen_geometry::ScreenGeometry;
 use crate::config::Config;
 use crate::runtime::terminal::TerminalState;
 use crate::test_util::FakeBackend;
@@ -34,6 +35,7 @@ fn tick_input(
     cfg: &Config,
     event: Event,
     redraw: &mut RedrawState,
+    geometry: &mut ScreenGeometry,
 ) -> anyhow::Result<()> {
     poll_terminals_before_input(workspace, redraw);
     let mut ready = Some(event);
@@ -41,8 +43,15 @@ fn tick_input(
         || Ok(ready.take()),
         |event| Ok(vec![event]),
         |event| {
-            let outcome =
-                dispatch_input_event(terminal, workspace, cfg, event, redraw, Instant::now())?;
+            let outcome = dispatch_input_event(
+                terminal,
+                workspace,
+                cfg,
+                event,
+                redraw,
+                geometry,
+                Instant::now(),
+            )?;
             assert!(matches!(outcome, Some(KeyOutcome::Continue)));
             Ok(InputControl::Continue)
         },
@@ -61,13 +70,38 @@ fn confirmed_pane_creation_is_polled_before_the_next_unix_input_event() {
     let cfg = Config::default();
     let terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     let mut redraw = RedrawState::new();
+    let mut geometry = ScreenGeometry::default();
     let first_pane = workspace.active().unwrap().terminal.active_pane_id();
 
-    tick_input(&terminal, &mut workspace, &cfg, leader(), &mut redraw).unwrap();
-    tick_input(&terminal, &mut workspace, &cfg, key('t'), &mut redraw).unwrap();
+    tick_input(
+        &terminal,
+        &mut workspace,
+        &cfg,
+        leader(),
+        &mut redraw,
+        &mut geometry,
+    )
+    .unwrap();
+    tick_input(
+        &terminal,
+        &mut workspace,
+        &cfg,
+        key('t'),
+        &mut redraw,
+        &mut geometry,
+    )
+    .unwrap();
     assert_eq!(workspace.active().unwrap().terminal.panes.len(), 1);
 
-    tick_input(&terminal, &mut workspace, &cfg, key('x'), &mut redraw).unwrap();
+    tick_input(
+        &terminal,
+        &mut workspace,
+        &cfg,
+        key('x'),
+        &mut redraw,
+        &mut geometry,
+    )
+    .unwrap();
 
     let app = workspace.active().unwrap();
     assert_eq!(app.terminal.panes.len(), 2);
@@ -159,6 +193,7 @@ fn mouse_hit_testing_uses_the_post_resize_terminal_size() {
     let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
     terminal.backend_mut().resize(50, 20);
     let mut redraw = RedrawState::new();
+    let mut geometry = ScreenGeometry::default();
     let now = Instant::now();
 
     dispatch_input_event(
@@ -167,6 +202,7 @@ fn mouse_hit_testing_uses_the_post_resize_terminal_size() {
         &cfg,
         Event::Resize(50, 20),
         &mut redraw,
+        &mut geometry,
         now,
     )
     .unwrap();
@@ -181,6 +217,7 @@ fn mouse_hit_testing_uses_the_post_resize_terminal_size() {
             modifiers: KeyModifiers::NONE,
         }),
         &mut redraw,
+        &mut geometry,
         now,
     )
     .unwrap();
@@ -189,4 +226,60 @@ fn mouse_hit_testing_uses_the_post_resize_terminal_size() {
         workspace.active().unwrap().terminal.active_pane_id(),
         Some(target)
     );
+}
+
+#[test]
+fn pointer_motion_without_a_click_requests_no_frame() {
+    let mut app = crate::app::tests::app_with_fake_backend();
+    app.terminal.create_pane_now().unwrap();
+    app.poll_terminal();
+    let mut workspace = Workspace::new(leader_key());
+    workspace.add(app);
+    let cfg = Config::default();
+    let terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    let mut redraw = RedrawState::new();
+    let mut geometry = ScreenGeometry::default();
+    let now = Instant::now();
+
+    for kind in [
+        MouseEventKind::Moved,
+        MouseEventKind::Drag(MouseButton::Left),
+    ] {
+        redraw.take();
+        let outcome = dispatch_input_event(
+            &terminal,
+            &mut workspace,
+            &cfg,
+            Event::Mouse(MouseEvent {
+                kind,
+                column: 3,
+                row: 3,
+                modifiers: KeyModifiers::NONE,
+            }),
+            &mut redraw,
+            &mut geometry,
+            now,
+        )
+        .unwrap();
+        assert!(matches!(outcome, Some(KeyOutcome::Continue)));
+        assert!(!redraw.take(), "{kind:?} must not request a frame");
+    }
+
+    redraw.take();
+    dispatch_input_event(
+        &terminal,
+        &mut workspace,
+        &cfg,
+        Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 3,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        }),
+        &mut redraw,
+        &mut geometry,
+        now,
+    )
+    .unwrap();
+    assert!(redraw.take(), "a press still requests a frame");
 }

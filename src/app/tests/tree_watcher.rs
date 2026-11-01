@@ -20,7 +20,7 @@ fn refresh_tree_cache_keeps_expansion_for_surviving_dirs() {
 
     app.refresh_tree_cache();
 
-    assert!(app.git.view.tree.expanded.contains("src"));
+    assert!(app.git.view.tree.expanded().contains("src"));
     assert!(
         app.git
             .view
@@ -112,7 +112,7 @@ fn poll_tree_watcher_ignores_events_outside_tree_mode() {
 
     // The event is drained but must not build/touch the tree off-screen.
     assert_eq!(app.git.view.mode, ViewMode::Status);
-    assert!(app.git.view.tree.cache.is_empty());
+    assert!(app.git.view.tree.cache().is_empty());
     drop(dir);
 }
 

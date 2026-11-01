@@ -93,7 +93,7 @@ pub fn open_repo(state: &SessionState, raw_path: &str) -> Result<RepoInfo, OpenE
 /// at all. The stored value is a path, because ids only live as long as the
 /// process (see [`super::prefs`]), so this is where it is translated back.
 pub fn active_repo(state: &SessionState) -> Option<String> {
-    active_repo_from(state, state.prefs.get().active_repo.as_deref())
+    active_repo_from(state, state.prefs.active_repo().as_deref())
 }
 
 /// [`active_repo`] against a `stored` value the caller already has.
@@ -126,7 +126,7 @@ pub fn focus_repo(state: &SessionState, id: &str) -> Result<(), CloseError> {
 
 /// The accent every surface of this session paints in.
 pub fn accent(state: &SessionState) -> usize {
-    state.prefs.get().accent
+    state.prefs.accent()
 }
 
 /// Set the session's accent, returning what was stored.
@@ -153,7 +153,7 @@ pub fn close_repo(state: &SessionState, id: &str) -> Result<(), CloseError> {
     // name a project this session does not serve. Comparing against the
     // closing path skipped those silently — the fallback answered correctly
     // only while the successor stayed first.
-    let focus_before = state.prefs.get().active_repo;
+    let focus_before = state.prefs.active_repo();
     // Read before the close: it is a position in the set about to change, and
     // only interesting when the closing tab is the one in front.
     let successor = (active_repo_from(state, focus_before.as_deref()).as_deref() == Some(id))
@@ -209,7 +209,7 @@ fn successor_of(state: &SessionState, id: &str) -> Option<String> {
 /// has been focused, and reordering changes which one that is — so the fallback
 /// is pinned to what it currently names before the slots move under it.
 pub fn reorder_repos(state: &SessionState, ids: &[String]) {
-    let focus_before = state.prefs.get().active_repo;
+    let focus_before = state.prefs.active_repo();
     let front = focus_before
         .as_deref()
         .and_then(|path| state.catalog.id_of_path(path))

@@ -45,7 +45,7 @@ fn inside_an_external_git_directory_the_same_paths_matter() {
     roots.set_external_git_dir(Some(Path::new(&git_dir)));
 
     for interesting in ["index", "HEAD", "refs/heads/main", "worktrees/wt/index"] {
-        assert!(any_matters(
+        assert!(any_matters_now(
             Some(&repo),
             &roots,
             &under(&git_dir, interesting)
@@ -56,7 +56,11 @@ fn inside_an_external_git_directory_the_same_paths_matter() {
         "logs/HEAD",
         "worktrees/wt/index.lock",
     ] {
-        assert!(!any_matters(Some(&repo), &roots, &under(&git_dir, noise)));
+        assert!(!any_matters_now(
+            Some(&repo),
+            &roots,
+            &under(&git_dir, noise)
+        ));
     }
     drop(dir);
 }
@@ -75,7 +79,7 @@ fn a_submodules_git_directory_is_read_rather_than_judged() {
         "modules/sub/HEAD",
         "modules/foo/objects/HEAD",
     ] {
-        assert!(any_matters(Some(&repo), &roots, &under(&git_dir, path)));
+        assert!(any_matters_now(Some(&repo), &roots, &under(&git_dir, path)));
     }
     drop(dir);
 }

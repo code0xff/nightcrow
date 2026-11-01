@@ -17,6 +17,8 @@ use crate::session::limits::MAX_TERMINAL_SCROLLBACK_BYTES;
 use crate::session::terminal::TerminalSession;
 use crate::session::terminal::frame::TerminalFrame;
 use crate::session::terminal::hub_modes::Observed;
+use crate::session::terminal::hub_replay::push_ring;
+use std::collections::VecDeque;
 use std::time::Duration;
 
 const PANE: PaneId = 7;
@@ -44,7 +46,7 @@ fn replay_text(session: &TerminalSession) -> String {
         if let TerminalFrame::Output { pane, data } = frame
             && pane == PANE
         {
-            joined.extend(data);
+            joined.extend(data.iter().copied());
         }
     }
     String::from_utf8_lossy(&joined).to_string()
@@ -191,5 +193,76 @@ fn returning_to_the_normal_screen_keeps_its_snapshot() {
     assert!(
         !text.contains("ALTSCREEN"),
         "the screen kept for the alternate buffer is spent, got: {text:?}"
+    );
+}
+
+/// A ring whose bytes wrap around its allocation: `as_slices` reports a run at the
+/// end of the buffer and the rest at its start, which is what a long-lived ring
+/// looks like after eviction.
+fn wrapped(bytes: &[u8]) -> VecDeque<u8> {
+    const PAD: usize = 32;
+    let mut ring: VecDeque<u8> = VecDeque::with_capacity(2 * PAD);
+    ring.extend(std::iter::repeat_n(b'.', PAD));
+    for _ in 0..PAD {
+        ring.pop_front();
+    }
+    ring.extend(bytes.iter().copied());
+    ring
+}
+
+/// A range that stops inside the first run must not reach for the second: the
+/// two runs are not adjacent, and reading past the first would splice the ring's
+/// oldest bytes into the middle of the history.
+#[test]
+fn push_ring_takes_a_range_that_lies_inside_the_front_slice() {
+    let data: Vec<u8> = (0..40).collect();
+    let ring = wrapped(&data);
+    let (front, back) = ring.as_slices();
+    assert!(
+        !back.is_empty() && front.len() > 6,
+        "the fixture must wrap its buffer, got {} + {} bytes",
+        front.len(),
+        back.len()
+    );
+
+    let range = 2..6;
+    let mut taken = Vec::new();
+    push_ring(&mut taken, &ring, range.clone());
+    let expected: Vec<u8> = ring
+        .iter()
+        .skip(range.start)
+        .take(range.len())
+        .copied()
+        .collect();
+    assert_eq!(taken, expected);
+}
+
+/// The snapshot's mark can fall exactly on the wrap. The tail it does not cover is
+/// then the whole second run, and must be replayed from its first byte.
+#[test]
+fn push_ring_starts_the_tail_at_the_back_slice_at_the_covered_mark() {
+    let data: Vec<u8> = (0..40).collect();
+    let ring = wrapped(&data);
+    let (front, back) = ring.as_slices();
+    assert!(!back.is_empty(), "the fixture must wrap its buffer");
+
+    let covered = front.len();
+    assert_eq!(covered, 32, "the mark must sit on the wrap");
+    let mut taken = Vec::new();
+    push_ring(&mut taken, &ring, covered..ring.len());
+    let expected: Vec<u8> = ring
+        .iter()
+        .skip(covered)
+        .take(ring.len() - covered)
+        .copied()
+        .collect();
+    assert_eq!(
+        taken, expected,
+        "the uncovered tail must be the bytes that follow the mark"
+    );
+    assert_eq!(
+        taken.as_slice(),
+        back,
+        "and they are exactly the second run"
     );
 }

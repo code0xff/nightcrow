@@ -1,4 +1,8 @@
+use super::rotation::{epoch_secs, expired_log_paths, is_nightcrow_log_file};
 use super::*;
+use std::fs::OpenOptions;
+use std::io::{self, Write};
+use std::time::{Duration, SystemTime};
 use tempfile::tempdir;
 
 #[test]
@@ -77,7 +81,7 @@ fn recognizes_generated_nightcrow_log_names() {
 #[test]
 fn size_rolling_appender_rotates_on_overflow() {
     let dir = tempdir().unwrap();
-    let mut appender = SizeRollingAppender::new(dir.path(), "test.log", 10).unwrap();
+    let mut appender = SizeRollingAppender::new(dir.path(), "test.log", 10, 0).unwrap();
     appender.write_all(b"hello12345").unwrap(); // exactly 10 bytes → no rotate yet
     appender.write_all(b"x").unwrap(); // 11th byte triggers rotate
     let inner = appender.inner.lock().unwrap();
@@ -91,11 +95,57 @@ fn size_rolling_appender_resumes_highest_existing_index() {
     fs::write(dir.path().join("test.log.2"), b"new").unwrap();
     fs::write(dir.path().join("test.log.2026-05-03"), b"daily").unwrap();
 
-    let appender = SizeRollingAppender::new(dir.path(), "test.log", 10).unwrap();
+    let appender = SizeRollingAppender::new(dir.path(), "test.log", 10, 0).unwrap();
     let inner = appender.inner.lock().unwrap();
 
     assert_eq!(inner.index, 2);
     assert_eq!(inner.current_size, 3);
+}
+
+fn backdate(path: &Path, age: Duration) {
+    let file = OpenOptions::new().write(true).open(path).unwrap();
+    file.set_times(std::fs::FileTimes::new().set_modified(SystemTime::now() - age))
+        .unwrap();
+}
+
+#[test]
+fn size_rotation_sweeps_logs_past_max_days() {
+    let dir = tempdir().unwrap();
+    let old = dir.path().join("nightcrow.log.0");
+    let newest = dir.path().join("nightcrow.log.1");
+    fs::write(&old, b"old").unwrap();
+    fs::write(&newest, b"active").unwrap();
+    backdate(&old, Duration::from_secs(40 * 86_400));
+    backdate(&newest, Duration::from_secs(20 * 86_400));
+
+    let mut appender = SizeRollingAppender::new(dir.path(), "nightcrow.log", 4, 30).unwrap();
+    appender.write_all(b"rotated").unwrap();
+
+    assert!(
+        !old.exists(),
+        "the rotation that moved past the newest file must sweep the expired one"
+    );
+    assert!(newest.exists(), "the newest log is never swept");
+}
+
+#[test]
+fn a_time_rotation_sweeps_logs_past_max_days() {
+    let dir = tempdir().unwrap();
+    let old = dir.path().join("nightcrow.log.2020-01-01");
+    let newest = dir.path().join("nightcrow.log.2026-05-03");
+    fs::write(&old, b"old").unwrap();
+    fs::write(&newest, b"active").unwrap();
+    backdate(&old, Duration::from_secs(40 * 86_400));
+    backdate(&newest, Duration::from_secs(20 * 86_400));
+
+    let mut writer = TimeRotationCleanup::new(io::sink(), dir.path(), 30, 3_600);
+    writer.rotate_if_due(epoch_secs() + 3_600);
+
+    assert!(
+        !old.exists(),
+        "a period rollover must sweep the expired log"
+    );
+    assert!(newest.exists(), "the newest log is never swept");
 }
 
 #[test]

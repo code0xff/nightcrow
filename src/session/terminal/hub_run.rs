@@ -1,24 +1,37 @@
+use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
 use super::hub_diag::ClearWatch;
 use super::hub_helpers::{Command, broadcast_locked, resize_due_before_command};
 use super::hub_modes::PaneModeTracker;
 use super::hub_plugins::Plugins;
-use super::{DEFAULT_PANE_SIZE, TerminalHub};
 use crate::backend::{BackendEvent, PaneId, PtyBackend, TerminalBackend};
-use crate::session::limits;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
-use std::thread;
 use std::time::{Duration, Instant};
 
+/// The fixed wait the worker used before it could be woken. Kept so the ignored
+/// measurement can reproduce that cadence and count the passes it cost.
 const POLL_INTERVAL: Duration = Duration::from_millis(8);
+
+/// Longest the worker waits with nothing to do. Only bounds the cost of a signal
+/// a producer failed to send; every pass that has work is owed a signal or a
+/// deadline, and both end the wait sooner.
+const IDLE_WAIT_CAP: Duration = Duration::from_secs(1);
 
 impl TerminalHub {
     pub(super) fn run(&self, cwd: &str, commands: Receiver<Command>, stop: Arc<AtomicBool>) {
         let mut backend = PtyBackend::new(cwd, self.shell.clone());
+        // The PTY reader and waiter threads report queued events rather than
+        // leaving this loop to poll for them.
+        backend.set_waker(Arc::clone(&self.wake));
         // Only the plugins some configured pane opted into are launched.
-        let mut plugins = Plugins::start(cwd, &self.plugins, &self.startup);
+        let mut plugins = Plugins::start(
+            cwd,
+            &self.plugins,
+            &self.startup,
+            Some(Arc::clone(&self.wake)),
+        );
         // What each pane's program has done to its terminal, so a client that
         // attaches later can be told rather than left to infer it from a replay.
         let mut modes = PaneModeTracker::default();
@@ -26,6 +39,8 @@ impl TerminalHub {
         let mut clears = ClearWatch::default();
 
         while !stop.load(Ordering::Acquire) {
+            #[cfg(test)]
+            self.probe.passes.fetch_add(1, Ordering::Relaxed);
             for pane in self.take_pending_closes() {
                 if !self.pane_is_live(pane) {
                     continue;
@@ -122,66 +137,19 @@ impl TerminalHub {
             // program sends many small chunks, and serializing a grid per chunk
             // would be the most expensive thing on this path.
             let mut restless: Vec<PaneId> = Vec::new();
+            // One clock for the whole tick: the chunk path, the synchronized
+            // update that ends on the clock, and the paced pass all read the
+            // same moment, so a screen stored by one is not immediately due
+            // to the other.
+            let now = Instant::now();
             for event in backend.drain_events() {
                 match event {
                     BackendEvent::Output { pane, data } => {
                         plugins.pane_output(&backend, pane, &data);
-                        // Before the lock: opening a pane's tracking emulator
-                        // reads the shared state for its size.
-                        let observed = modes.observe(pane, &data, || {
-                            self.pane_size(pane)
-                                .unwrap_or((DEFAULT_PANE_SIZE.rows, DEFAULT_PANE_SIZE.cols))
-                        });
-                        let alt = observed.modes.alt_screen;
-                        // A chunk that moved the pane onto the alternate screen
-                        // carries the switch and the first paint together, so its
-                        // screen is taken in the same breath as the record —
-                        // provided the chunk ends clean (`at_boundary`, below).
-                        // Cut mid-sequence it is filed into `since` instead, and
-                        // the tick's restless pass takes the screen once the
-                        // stream closes; until then a connecting client replays
-                        // `since` raw, landing pre-switch text on the wrong
-                        // buffer for that moment — the paint that follows covers
-                        // it, and the retry replaces it.
-                        let screen = (alt && observed.alt_changed && modes.at_boundary(pane))
-                            .then(|| modes.snapshot(pane))
-                            .flatten();
-                        let owed = self.record_and_broadcast(pane, data, observed, screen);
-                        // Snapshots wait for a chunk that ends with its
-                        // sequences closed (`at_boundary`): the snapshot is
-                        // spliced into the recorded stream on replay, and a seam
-                        // inside a sequence hands a reattaching client its tail
-                        // as ordinary input. A crowded record retries with every
-                        // next chunk; a desperate one has waited a whole extra
-                        // ring, which no real sequence spans, so the records are
-                        // bounded over a torn seam. Desperation overrides the
-                        // sequence seam only — a grid missing a synchronized
-                        // update's bytes (`screen_current`) must never be
-                        // snapshotted, and needs no override: the update ends at
-                        // the processor's own buffer cap if nothing else.
-                        let crowded = owed > limits::MAX_TERMINAL_SCROLLBACK_BYTES;
-                        let desperate = owed > 2 * limits::MAX_TERMINAL_SCROLLBACK_BYTES;
-                        let ready =
-                            modes.at_boundary(pane) || (desperate && modes.screen_current(pane));
-                        if alt {
-                            // Refreshed now rather than at the end of the tick: what
-                            // a connecting client is handed on top of the screen has
-                            // to stay bounded, and only a fresh screen bounds it.
-                            if crowded && ready {
-                                if let Some(screen) = modes.snapshot(pane) {
-                                    self.store_screen(pane, screen);
-                                }
-                            } else if !restless.contains(&pane) {
-                                restless.push(pane);
-                            }
-                        } else if crowded && ready {
-                            // Not per tick like the alternate screen's: between
-                            // snapshots the tail keeps the replay exact on its
-                            // own, so this costs a serialization once per
-                            // ring's worth of output.
-                            if let Some(screen) = modes.snapshot(pane) {
-                                self.store_normal_screen(pane, screen);
-                            }
+                        if self.record_pane_output(pane, data, &mut modes, now)
+                            && !restless.contains(&pane)
+                        {
+                            restless.push(pane);
                         }
                     }
                     // Destroyed as well as forgotten: `PtyBackend` leaves pane
@@ -218,7 +186,7 @@ impl TerminalHub {
             // at the processor's buffer cap either. Ended on the clock, so a
             // grid no byte will ever release stops holding the pane's modes
             // and every snapshot taken from it.
-            for (pane, observed) in modes.settle_sync(Instant::now()) {
+            for (pane, observed) in modes.settle_sync(now) {
                 let alt = observed.modes.alt_screen;
                 self.store_settled(pane, observed);
                 if alt && !restless.contains(&pane) {
@@ -226,17 +194,18 @@ impl TerminalHub {
                 }
             }
 
-            // Once per tick, for every alternate-screen pane this tick moved: the
-            // screen a connecting client is given, and the point at which what it
-            // is owed on top of that screen goes back to nothing. A pane whose
+            // Once per tick, for every alternate-screen pane this tick moved and
+            // for every pane that still owes bytes after falling idle: the screen
+            // a connecting client is given, and the point at which what it is owed
+            // on top of that screen goes back to nothing. Paced rather than taken
+            // every tick — see `PaneModeTracker::settle_restless` — so a program
+            // that paints several times per tick costs one serialization per
+            // window instead of one per tick, while a quiet pane still gets a
+            // trailing snapshot one window after its last write. A pane whose
             // last chunk ended mid-sequence keeps its old anchor — it is restless
             // again the moment it produces more output.
-            for pane in restless {
-                if modes.at_boundary(pane)
-                    && let Some(screen) = modes.snapshot(pane)
-                {
-                    self.store_screen(pane, screen);
-                }
+            for (pane, screen) in modes.settle_restless(&restless, now) {
+                self.store_screen(pane, screen);
             }
 
             if !plugins.is_inert() {
@@ -253,9 +222,35 @@ impl TerminalHub {
             // A sizing owner that disconnected is held for a grace, so that
             // switching repositories — which closes one socket and opens
             // another — does not re-fit every pane there and back. Nothing runs
-            // on its own to end that, so the tick does.
+            // on its own to end that, so the pass does.
             self.settle_size_owner(Instant::now());
-            thread::sleep(POLL_INTERVAL);
+            // A pass that left work undone — a command a full queue refused, a
+            // plugin that filled its per-tick budget — was signalled by whoever
+            // produced it, so the pending flag brings the next pass at once. A PTY
+            // pane that spent its drain window's budget is the exception: its
+            // reader's signal was consumed by an earlier pass, so the backlog is a
+            // deadline at the window's end. Everything else is on a clock.
+            #[cfg(test)]
+            let legacy_polling = self.probe.legacy_polling.load(Ordering::Acquire);
+            #[cfg(not(test))]
+            let legacy_polling = false;
+            #[cfg(test)]
+            let idle_cap = self.wait_cap().unwrap_or(IDLE_WAIT_CAP);
+            #[cfg(not(test))]
+            let idle_cap = IDLE_WAIT_CAP;
+            let cap = if legacy_polling {
+                POLL_INTERVAL
+            } else {
+                idle_cap
+            };
+            let deadline = if legacy_polling {
+                None
+            } else {
+                self.next_deadline(&backend, &modes, &plugins, Instant::now())
+            };
+            #[cfg(test)]
+            self.record_worker_deadline(deadline);
+            self.wake.wait(deadline, cap);
         }
 
         // Ahead of the panes: a plugin child is not one of `PtyBackend`'s panes,
@@ -298,5 +293,7 @@ impl TerminalHub {
         // client left parked on one would keep an orphan chip whose cancel
         // nothing answers.
         super::hub_recovery::end_all_recoveries_locked(&mut state);
+        #[cfg(test)]
+        self.probe.done.store(true, Ordering::Release);
     }
 }

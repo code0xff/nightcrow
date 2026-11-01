@@ -60,7 +60,7 @@ fn output_through(session: &TerminalSession, pane: PaneId, marker: &str) -> Vec<
     while Instant::now() < deadline {
         match session.next_frame(QUIET) {
             Some(TerminalFrame::Output { pane: p, data }) if p == pane => {
-                out.extend(data);
+                out.extend(data.iter().copied());
                 if !arrived {
                     arrived = String::from_utf8_lossy(&out[scanned..]).contains(marker);
                     scanned = out.len().saturating_sub(marker.len().saturating_sub(1));

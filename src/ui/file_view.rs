@@ -1,5 +1,8 @@
 use crate::git::diff::StatusKind;
-use crate::ui::diff_pane::{DIFF_THEME, HighlightSegment, highlight_line_segments};
+use crate::ui::diff_pane::{
+    DIFF_THEME, HIGHLIGHT_LINE_CAP, HighlightCheckpoint, HighlightSegment, LineHighlighter,
+    highlight_line_segments,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileViewKey {
@@ -19,9 +22,9 @@ pub struct FileViewState {
     pub scroll_x: usize,
     pub anchor_line: Option<usize>,
     pub error: Option<String>,
-    /// Cached syntect highlight output, one entry per `content.lines()` line,
-    /// built once per (content, syntax) so per-frame rendering only slices
-    /// the visible window.
+    /// Cached syntect highlight output for the leading
+    /// [`HIGHLIGHT_LINE_CAP`] lines, built once per (content, syntax) so
+    /// per-frame rendering only slices the visible window.
     pub line_highlights: Vec<Vec<HighlightSegment>>,
     /// Syntax name used to build `line_highlights`. `None` = unbuilt or
     /// invalidated.
@@ -33,9 +36,18 @@ pub struct FileViewState {
     /// Byte length of `content` at cache build time. With `total_lines` it
     /// detects in-place content edits that keep the line count constant.
     pub(crate) cached_content_len: usize,
+    /// Byte offset of each logical line start, built together with `content`
+    /// so a line past the highlight cap can be sliced without rescanning.
+    pub(crate) line_starts: Vec<usize>,
     /// Lowercased copy of each `content` line. Built on demand by
     /// `ensure_lower_cache` so per-keystroke file search avoids re-lowercasing.
     pub(crate) lines_lower: Vec<String>,
+    /// Leading `line_highlights` entries that still match `content` after an
+    /// append, so the next cache build extends instead of replaying the file.
+    /// Zero for a fresh load or any non-append change.
+    pub(crate) reusable_highlights: usize,
+    /// State after the last cached line, used to resume appends.
+    pub(crate) highlight_checkpoint: Option<HighlightCheckpoint>,
 }
 
 impl FileViewState {
@@ -48,14 +60,16 @@ impl FileViewState {
     /// can't leave them disagreeing (which would make `max_scroll` lie about
     /// the legal scroll range).
     pub fn set_content(&mut self, content: String) {
-        self.total_lines = if content.is_empty() {
-            0
-        } else {
-            content.lines().count()
-        };
+        let reusable = self.appendable_prefix_len(&content);
+        self.line_starts = line_starts(&content);
+        self.total_lines = self.line_starts.len();
         self.content = content;
-        self.line_highlights.clear();
-        self.cached_syntax_name = None;
+        self.line_highlights.truncate(reusable);
+        self.reusable_highlights = reusable;
+        if reusable == 0 {
+            self.cached_syntax_name = None;
+            self.highlight_checkpoint = None;
+        }
         self.cached_content_len = 0;
         self.lines_lower.clear();
         self.scroll = self.scroll.min(self.max_scroll());
@@ -74,6 +88,20 @@ impl FileViewState {
         self.scroll = self.scroll.saturating_add(n).min(self.max_scroll());
     }
 
+    /// Text of the logical line at `idx`, without its line terminator, or
+    /// `None` when `idx` is past the last line.
+    pub(crate) fn line_text(&self, idx: usize) -> Option<&str> {
+        let start = *self.line_starts.get(idx)?;
+        let end = self
+            .line_starts
+            .get(idx + 1)
+            .copied()
+            .unwrap_or(self.content.len());
+        let line = &self.content[start..end];
+        let line = line.strip_suffix('\n').unwrap_or(line);
+        Some(line.strip_suffix('\r').unwrap_or(line))
+    }
+
     /// Ensure `lines_lower` is built for the current `content`, so per-
     /// keystroke search pays the lowercase cost once per file load.
     pub(crate) fn ensure_lower_cache(&mut self) {
@@ -83,34 +111,109 @@ impl FileViewState {
         self.lines_lower = self.content.lines().map(|l| l.to_lowercase()).collect();
     }
 
-    /// Ensure `line_highlights` matches the current `content` and supplied
-    /// syntax. Rebuilds when the line count diverges or the syntax name
-    /// changed since the last build.
+    /// Ensure the leading `line_highlights` match the current `content` and
+    /// supplied syntax, stopping at [`HIGHLIGHT_LINE_CAP`]. Rebuilds when the
+    /// cached prefix length diverges or the syntax name changed since the
+    /// last build. Appended lines resume from the saved state after the cached
+    /// prefix, so only the new tail is highlighted.
     pub fn ensure_highlight_cache(
         &mut self,
         ss: &syntect::parsing::SyntaxSet,
         ts: &syntect::highlighting::ThemeSet,
         syntax: &syntect::parsing::SyntaxReference,
     ) {
-        let total = self.line_count();
+        let limit = self.line_count().min(HIGHLIGHT_LINE_CAP);
         let content_len = self.content.len();
-        if self.line_highlights.len() == total
+        if self.line_highlights.len() == limit
             && self.cached_content_len == content_len
             && self.cached_syntax_name.as_deref() == Some(syntax.name.as_str())
         {
             return;
         }
 
-        use syntect::easy::HighlightLines;
         let theme = &ts.themes[DIFF_THEME];
-        let mut hl = HighlightLines::new(syntax, theme);
+        let reusable = if self.cached_syntax_name.as_deref() == Some(syntax.name.as_str())
+            && self.reusable_highlights > 0
+            && self.reusable_highlights <= self.line_highlights.len()
+        {
+            self.reusable_highlights
+        } else {
+            0
+        };
+        let mut out: Vec<Vec<HighlightSegment>> = Vec::new();
+        let mut hl = match self.highlight_checkpoint.take() {
+            Some(checkpoint) if reusable > 0 => {
+                let mut kept = std::mem::take(&mut self.line_highlights);
+                kept.truncate(reusable);
+                out = kept;
+                LineHighlighter::resume(theme, checkpoint)
+            }
+            _ => {
+                self.line_highlights.clear();
+                LineHighlighter::new(syntax, theme)
+            }
+        };
 
-        let mut out: Vec<Vec<HighlightSegment>> = Vec::with_capacity(total);
-        for raw in self.content.lines() {
+        for raw in self.content.lines().take(limit).skip(out.len()) {
             out.push(highlight_line_segments(&mut hl, ss, raw));
         }
+        self.highlight_checkpoint = if out.is_empty() {
+            None
+        } else {
+            Some(hl.checkpoint())
+        };
         self.line_highlights = out;
         self.cached_syntax_name = Some(syntax.name.clone());
         self.cached_content_len = content_len;
+        self.reusable_highlights = 0;
+    }
+
+    /// Number of leading cached lines that survive `next` unchanged.
+    ///
+    /// Reuse needs the cached lines to end at a line boundary in the old
+    /// content and to be byte-identical in `next`; anything else falls back to
+    /// a full rebuild.
+    fn appendable_prefix_len(&self, next: &str) -> usize {
+        let reusable = self.line_highlights.len();
+        if reusable == 0 {
+            return 0;
+        }
+        match self.line_starts.get(reusable) {
+            Some(&boundary) => {
+                if next.len() < boundary
+                    || self.content.as_bytes()[..boundary] != next.as_bytes()[..boundary]
+                {
+                    return 0;
+                }
+                reusable
+            }
+            None => {
+                if self.content.ends_with('\n') && next.starts_with(self.content.as_str()) {
+                    reusable
+                } else {
+                    0
+                }
+            }
+        }
     }
 }
+
+/// Byte offsets where `str::lines` starts each line. A trailing newline does
+/// not start an empty final line, matching `str::lines`.
+fn line_starts(content: &str) -> Vec<usize> {
+    if content.is_empty() {
+        return Vec::new();
+    }
+    let bytes = content.as_bytes();
+    let mut starts = vec![0];
+    for (i, byte) in bytes.iter().enumerate() {
+        if *byte == b'\n' && i + 1 < bytes.len() {
+            starts.push(i + 1);
+        }
+    }
+    starts
+}
+
+#[cfg(test)]
+#[path = "file_view_tests.rs"]
+mod tests;

@@ -1,9 +1,13 @@
 use super::{attach, spawn_hub_with_auto_open};
+use crate::daemon::frame::{Frame, MAX_FRAME_BYTES, write_frame};
 use crate::runtime::emulator::PaneModes;
 use crate::session::terminal::CLIENT_QUEUE_DEPTH;
 use crate::session::terminal::frame::{ServerMessage, TerminalFrame};
+use crate::session::terminal::hub_helpers::PaneState;
 use crate::session::terminal::hub_modes::Observed;
-use crate::session::terminal::hub_replay::ReplayQueue;
+use crate::session::terminal::hub_replay::{REPLAY_CHUNK_BYTES, ReplayQueue};
+use crate::session::terminal::hub_replay_record::{Chunks, Sink};
+use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -47,7 +51,7 @@ fn empty_replay_marker_precedes_the_initial_size_verdict() {
     );
     assert!(matches!(
         session.next_frame(Duration::ZERO),
-        Some(TerminalFrame::Output { pane: 7, data }) if data == b"LIVE"
+        Some(TerminalFrame::Output { pane: 7, data }) if &data[..] == b"LIVE"
     ));
     hub.stop();
 }
@@ -110,4 +114,171 @@ fn replay_frame_budget_leaves_one_slot_for_completion() {
     ))
     .expect("the reserved slot accepts completion");
     assert_eq!(rx.try_iter().count(), CLIENT_QUEUE_DEPTH + 1);
+}
+
+/// The replay's frame cuts are part of the wire contract: a client applies the
+/// concatenation, but one frame may never approach the 4 MiB socket ceiling, and
+/// 1 MiB cuts are what keep the largest allowed replay inside the client queue
+/// depth. Capture builds these frames, so it has to cut them where the old
+/// `chunks` call did.
+#[test]
+fn a_replay_is_cut_into_the_same_one_mib_frames() {
+    const PANE: u32 = 7;
+    const ROWS: u16 = 24;
+    const COLS: u16 = 80;
+    let total = 2 * REPLAY_CHUNK_BYTES + 7;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub =
+        spawn_hub_with_auto_open(&dir.path().to_string_lossy(), Vec::new(), Vec::new(), false);
+    hub.state
+        .lock()
+        .expect("terminal state poisoned")
+        .panes
+        .push(PaneState {
+            id: PANE,
+            title: None,
+            scrollback: std::iter::repeat_n(b'x', total).collect::<VecDeque<u8>>(),
+            normal_screen: Vec::new(),
+            covered: 0,
+            screen: Vec::new(),
+            since: VecDeque::new(),
+            rows: ROWS,
+            cols: COLS,
+            modes: PaneModes::default(),
+        });
+
+    let session = attach(&hub);
+    let mut sizes = Vec::new();
+    let mut assembled = Vec::new();
+    while let Some(frame) = session.next_frame(Duration::from_millis(300)) {
+        if let TerminalFrame::Output { pane, data } = frame
+            && pane == PANE
+        {
+            sizes.push(data.len());
+            assembled.extend(data.iter().copied());
+        }
+    }
+    hub.stop();
+
+    assert!(
+        sizes.len() == 4 && sizes[0] < REPLAY_CHUNK_BYTES,
+        "the mode prelude leads in its own frame, got {sizes:?}"
+    );
+    assert_eq!(
+        &sizes[1..],
+        &[REPLAY_CHUNK_BYTES, REPLAY_CHUNK_BYTES, 7],
+        "the record must be cut where the wire contract cuts it"
+    );
+    assert_eq!(assembled.len(), sizes.iter().sum::<usize>());
+    assert!(
+        assembled[sizes[0]..].iter().all(|&byte| byte == b'x'),
+        "the record's bytes must arrive exactly once and in order"
+    );
+}
+
+/// The cut points themselves, at the sizes where a chunk boundary is easiest to get
+/// wrong: nothing at all, one byte, a byte short of a chunk, a chunk exactly, a byte
+/// over, and two whole chunks. Capture fills these chunks in uneven writes, so the
+/// boundary falls inside a write rather than the end of one.
+#[test]
+fn replay_chunks_are_cut_where_the_contract_cuts_them() {
+    for total in [
+        0,
+        1,
+        REPLAY_CHUNK_BYTES - 1,
+        REPLAY_CHUNK_BYTES,
+        REPLAY_CHUNK_BYTES + 1,
+        2 * REPLAY_CHUNK_BYTES,
+    ] {
+        let bytes = vec![b'x'; total];
+        let mut chunks = Chunks::new(total);
+        for piece in bytes.chunks(7) {
+            chunks.write(piece);
+        }
+        let chunks = chunks.finish();
+
+        let sizes: Vec<usize> = chunks.iter().map(|chunk| chunk.len()).collect();
+        let cuts: Vec<usize> = bytes.chunks(REPLAY_CHUNK_BYTES).map(<[u8]>::len).collect();
+        assert_eq!(
+            sizes, cuts,
+            "a {total}-byte record must be cut where the contract cuts it"
+        );
+        assert!(
+            chunks
+                .iter()
+                .flat_map(|chunk| chunk.iter().copied())
+                .eq(bytes),
+            "a {total}-byte record must arrive as its own bytes, once and in order"
+        );
+    }
+}
+
+/// The cut exists for the socket: `write_frame` refuses a payload over
+/// [`MAX_FRAME_BYTES`], and an alternate-screen pane's screen grows with its area. The
+/// two constants are held to each other where they are defined, so every build checks
+/// that; this puts a full chunk through the writer that would reject it, proving the
+/// encoder accepts the size the replay actually cuts to.
+#[test]
+fn a_replay_chunk_is_a_frame_the_daemon_socket_still_accepts() {
+    let mut written = Vec::new();
+    write_frame(
+        &mut written,
+        &Frame::terminal(vec![b'x'; REPLAY_CHUNK_BYTES]),
+    )
+    .expect("a full replay chunk must still be a writable frame");
+    assert_eq!(
+        written.len(),
+        REPLAY_CHUNK_BYTES + 5,
+        "the frame is the chunk plus its kind byte and length prefix"
+    );
+    assert!(
+        written.len() - 5 <= MAX_FRAME_BYTES,
+        "the encoded chunk must stay inside the daemon's payload limit"
+    );
+}
+
+/// The fill writes straight into uninitialized allocations and only turns them into
+/// bytes once the whole record is in, so a schedule that assumes one write per chunk
+/// would be unsound rather than merely wrong. The fixed sizes above pin the cases a
+/// boundary test thinks of; walk a deterministic pseudo-random schedule as well, since
+/// the ring hands over whatever runs its two slices happen to give.
+#[test]
+fn replay_chunks_fill_under_any_write_schedule() {
+    let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+    let mut below = |bound: usize| {
+        seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        usize::try_from(seed >> 33).unwrap_or(0) % bound.max(1)
+    };
+
+    for _ in 0..48 {
+        let total = below(2 * REPLAY_CHUNK_BYTES + 64);
+        let bytes: Vec<u8> = (0..total).map(|index| (index % 251) as u8).collect();
+        let mut chunks = Chunks::new(total);
+        let mut written = 0;
+        while written < total {
+            // A schedule of 0..=4095-byte writes, never empty, so progress is made and
+            // a boundary falls mid-write as often as it does not.
+            let take = below(4096).max(1).min(total - written);
+            chunks.write(&bytes[written..written + take]);
+            written += take;
+        }
+        let chunks = chunks.finish();
+
+        let sizes: Vec<usize> = chunks.iter().map(|chunk| chunk.len()).collect();
+        let cuts: Vec<usize> = bytes.chunks(REPLAY_CHUNK_BYTES).map(<[u8]>::len).collect();
+        assert_eq!(
+            sizes, cuts,
+            "a {total}-byte record must be cut where the contract cuts it"
+        );
+        assert!(
+            chunks
+                .iter()
+                .flat_map(|chunk| chunk.iter().copied())
+                .eq(bytes.iter().copied()),
+            "a {total}-byte record must arrive as its own bytes, once and in order"
+        );
+    }
 }

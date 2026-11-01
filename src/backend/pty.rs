@@ -2,7 +2,7 @@ use super::slot::{PaneSlot, PaneSlots};
 use super::{BackendEvent, PaneId, ResizeOutcome, TerminalBackend};
 use crate::config::ShellConfig;
 use crate::platform::process_tree::ProcessTree;
-use crate::platform::threading::try_timed_join;
+use crate::platform::threading::WakeHandle;
 use anyhow::Result;
 use portable_pty::PtySize;
 use std::collections::BTreeMap;
@@ -18,6 +18,12 @@ mod io;
 #[path = "pty_spawn.rs"]
 mod spawn;
 
+#[path = "pty_drain.rs"]
+mod drain;
+mod reap;
+#[path = "pty_wakeup.rs"]
+mod wakeup;
+
 /// Reap window for PTY reader / wait threads. Bigger than the commit-log
 /// REAP_TIMEOUT because `read()` on a PTY master can stay blocked if a
 /// daemonized grandchild inherited the slave fd.
@@ -25,6 +31,27 @@ const PTY_REAP_TIMEOUT: Duration = Duration::from_millis(50);
 
 /// Max events drained from any one pane in a single `drain_events` call.
 const PER_PANE_DRAIN_BUDGET: usize = 64;
+
+/// The window a woken owner's per-pane budget applies to. An owner that polled on
+/// a fixed tick took at most one budget per tick. An owner woken by the reader
+/// runs a pass per queued event, so a per-pass budget never binds and a burst
+/// reaches its clients as fast as the PTY produces it, flooding their bounded
+/// queues, which cut a client off rather than skip bytes. Counting the budget
+/// across every pass in this window keeps the polled ceiling.
+const DRAIN_WINDOW: Duration = Duration::from_millis(8);
+
+/// A woken owner's budget use for one pane within the current [`DRAIN_WINDOW`].
+#[derive(Clone, Copy, Debug)]
+pub(super) struct DrainWindow {
+    pub(super) start: Instant,
+    pub(super) used: usize,
+}
+
+impl DrainWindow {
+    pub(super) fn end(&self) -> Instant {
+        self.start + DRAIN_WINDOW
+    }
+}
 
 /// How long a pane whose child has exited keeps draining before the exit is
 /// reported. The caller destroys the pane the moment it sees `Exited`, so
@@ -55,12 +82,12 @@ pub(super) enum ExitPhase {
 }
 
 pub(super) struct PtyPane {
-    // Option wrapping lets Drop release the master and receiver before joining
-    // workers, so blocked output sends can switch to discard-drain.
+    // Option wrapping lets Drop release the receiver before the process is
+    // terminated, and hand the remaining handles to a reaper.
     pub(super) master: Option<Box<dyn portable_pty::MasterPty>>,
     input: Option<io::InputQueue>,
-    pub(super) killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
-    pub(super) process_tree: ProcessTree,
+    pub(super) killer: Option<Box<dyn portable_pty::ChildKiller + Send + Sync>>,
+    pub(super) process_tree: Option<ProcessTree>,
     pub(super) rx: Option<Receiver<PtyEvent>>,
     pub(super) reader_handle: Option<thread::JoinHandle<()>>,
     pub(super) writer_handle: Option<thread::JoinHandle<()>>,
@@ -68,6 +95,9 @@ pub(super) struct PtyPane {
     #[cfg(test)]
     pub(super) output_backpressured: Arc<AtomicBool>,
     pub(super) exit: ExitPhase,
+    /// A woken owner's budget use in the current window; `None` for a polling
+    /// owner, whose own tick paces it.
+    pub(super) window: Option<DrainWindow>,
 }
 
 impl Drop for PtyPane {
@@ -76,30 +106,18 @@ impl Drop for PtyPane {
         // PTY is being torn down. A disconnected reader keeps draining to EOF.
         drop(self.rx.take());
         // Cancel queued input before terminating the process; a blocked
-        // in-flight write is handled by the bounded worker join below.
+        // in-flight write is handled by the reaper's bounded worker join.
         drop(self.input.take());
-        // Terminate the pane's process boundary before the PTY handles and
-        // waiter are reaped, so child jobs cannot outlive an explicit close.
-        if let Err(error) = self.process_tree.terminate() {
-            tracing::warn!(%error, "could not terminate pane process tree");
-        }
-        // Best-effort direct kill covers a child that exited before its tree
-        // termination raced with teardown.
-        let _ = self.killer.kill();
-        // Close the PTY boundary before joining; platform teardown normally
-        // releases blocked system calls, and every join remains bounded.
-        self.master.take();
-        if let Some(h) = self.writer_handle.take() {
-            try_timed_join(h, PTY_REAP_TIMEOUT);
-        }
-        // Bounded joins: a daemonized grandchild may keep the reader blocked
-        // on Unix, so detach rather than freezing pane teardown.
-        if let Some(h) = self.reader_handle.take() {
-            try_timed_join(h, PTY_REAP_TIMEOUT);
-        }
-        if let Some(h) = self.wait_handle.take() {
-            try_timed_join(h, PTY_REAP_TIMEOUT);
-        }
+        let mut reaper = reap::PaneReaper {
+            master: self.master.take(),
+            killer: self.killer.take(),
+            process_tree: self.process_tree.take(),
+            writer: self.writer_handle.take(),
+            reader: self.reader_handle.take(),
+            waiter: self.wait_handle.take(),
+        };
+        reaper.terminate();
+        crate::platform::threading::spawn_reaper("pane-reaper", move || reaper.reap());
     }
 }
 
@@ -121,6 +139,10 @@ pub struct PtyBackend {
     created: Vec<BackendEvent>,
     /// The shell every terminal pane is spawned with.
     pub(super) shell: ShellConfig,
+    /// Set by an owner that parks between passes, so the reader and waiter
+    /// threads below can tell it an event is queued. `None` leaves the owner
+    /// polling, which is what the attached TUI's backend does.
+    waker: Option<WakeHandle>,
 }
 
 impl PtyBackend {
@@ -132,6 +154,7 @@ impl PtyBackend {
             cwd: cwd.as_ref().to_path_buf(),
             created: Vec::new(),
             shell,
+            waker: None,
         }
     }
 
@@ -220,69 +243,9 @@ impl TerminalBackend for PtyBackend {
     }
 
     fn drain_events(&mut self) -> Vec<BackendEvent> {
-        // Pane removal is the caller's responsibility (App::poll_terminal calls
-        // destroy_pane on Exited). Doing it here too created a dual-ownership
-        // race where reader-thread events queued after destroy_pane were
-        // silently dropped, and where Exited could be reported twice.
-        //
-        // The reader thread emits all Output messages, then a single Exited as
-        // the last message before its sender drops, so the mpsc order means no
-        // separate post-Exited drain is needed. `ChildExited` carries no such
-        // ordering — it can overtake output already written — so it only moves
-        // the pane to `Draining`.
-        //
-        // Each pane is drained up to PER_PANE_DRAIN_BUDGET events so one noisy
-        // pane (e.g. `yes | head -100000`) cannot starve its siblings within a
-        // frame; the rest lands on the next tick.
-        // Ahead of any output: a pane has to exist before bytes can be routed
-        // to it, and both can be queued before the same drain.
-        let mut events: Vec<BackendEvent> = std::mem::take(&mut self.created);
-        let now = Instant::now();
-        for (id, pane) in &mut self.panes {
-            let mut budget = PER_PANE_DRAIN_BUDGET;
-            while budget > 0 {
-                match pane
-                    .rx
-                    .as_ref()
-                    .expect("live pane has output receiver")
-                    .try_recv()
-                {
-                    Ok(PtyEvent::Output(data)) => {
-                        // One timestamp for the whole drain: the bytes arrived
-                        // between this tick and the last, and a per-event clock
-                        // read would claim a precision the 8 ms poll does not
-                        // have.
-                        self.slots.mark_output(*id, now);
-                        events.push(BackendEvent::Output { pane: *id, data });
-                    }
-                    Ok(PtyEvent::ChildExited) => {
-                        if pane.exit == ExitPhase::Running {
-                            pane.exit = ExitPhase::Draining { since: now };
-                        }
-                    }
-                    Ok(PtyEvent::Exited) => {
-                        if pane.exit != ExitPhase::Reported {
-                            pane.exit = ExitPhase::Reported;
-                            events.push(BackendEvent::Exited { pane: *id });
-                        }
-                        break;
-                    }
-                    Err(_) => {
-                        // Dry: for a dead child past its drain grace, the cue
-                        // to report.
-                        if let ExitPhase::Draining { since } = pane.exit
-                            && now.duration_since(since) >= EXIT_DRAIN_GRACE
-                        {
-                            pane.exit = ExitPhase::Reported;
-                            events.push(BackendEvent::Exited { pane: *id });
-                        }
-                        break;
-                    }
-                }
-                budget -= 1;
-            }
-        }
-        events
+        // What a pass reports, and how a budget spent with events still queued
+        // asks to be run again, live in `drain_queued`.
+        self.drain_queued()
     }
 }
 

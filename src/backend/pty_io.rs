@@ -1,4 +1,5 @@
 use super::PtyEvent;
+use crate::platform::threading::WakeHandle;
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::sync::{Arc, Condvar, Mutex, mpsc::SyncSender};
@@ -137,17 +138,19 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 pub(super) fn spawn_output_reader<R: Read + Send + 'static>(
     reader: R,
     tx: SyncSender<PtyEvent>,
+    waker: Option<WakeHandle>,
 ) -> JoinHandle<()> {
-    spawn_output_reader_inner(reader, tx, |_| {})
+    spawn_output_reader_inner(reader, tx, waker, |_| {})
 }
 
 #[cfg(test)]
 pub(super) fn spawn_output_reader_observed<R: Read + Send + 'static>(
     reader: R,
     tx: SyncSender<PtyEvent>,
+    waker: Option<WakeHandle>,
     backpressured: Arc<std::sync::atomic::AtomicBool>,
 ) -> JoinHandle<()> {
-    spawn_output_reader_inner(reader, tx, move |blocked| {
+    spawn_output_reader_inner(reader, tx, waker, move |blocked| {
         backpressured.store(blocked, std::sync::atomic::Ordering::Release);
     })
 }
@@ -155,6 +158,7 @@ pub(super) fn spawn_output_reader_observed<R: Read + Send + 'static>(
 fn spawn_output_reader_inner<R, F>(
     mut reader: R,
     tx: SyncSender<PtyEvent>,
+    waker: Option<WakeHandle>,
     mut set_backpressure: F,
 ) -> JoinHandle<()>
 where
@@ -168,13 +172,16 @@ where
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) if connected => match tx.try_send(PtyEvent::Output(buf[..n].to_vec())) {
-                    Ok(()) => {}
+                    Ok(()) => wake_owner(&waker),
                     Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
                         connected = false;
                     }
                     Err(std::sync::mpsc::TrySendError::Full(event)) => {
                         set_backpressure(true);
                         let sent = tx.send(event).is_ok();
+                        if sent {
+                            wake_owner(&waker);
+                        }
                         set_backpressure(false);
                         connected = sent;
                     }
@@ -184,6 +191,15 @@ where
         }
         if connected {
             let _ = tx.send(PtyEvent::Exited);
+            wake_owner(&waker);
         }
     })
+}
+
+/// Tell a waiting owner that an event is queued. A backend with no owner parked
+/// on it (`None`) leaves its caller to poll, as the attached TUI's backend does.
+fn wake_owner(waker: &Option<WakeHandle>) {
+    if let Some(waker) = waker {
+        waker.wake();
+    }
 }

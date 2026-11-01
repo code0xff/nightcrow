@@ -12,6 +12,7 @@
 
 use crate::backend::PaneId;
 use crate::config::{PluginConfig, StartupCommand};
+use crate::platform::threading::WakeHandle;
 use crate::plugin::{Guard, PluginHost, RateLimits};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
@@ -22,11 +23,17 @@ use std::time::Duration;
 /// mid-answer and well short of a wait a person would notice.
 pub(super) const PANE_IDLE_THRESHOLD: Duration = Duration::from_secs(10);
 
-/// Commands taken from any one plugin per loop iteration. One thread serves
-/// every pane in the repository, so a plugin that writes without pause must
-/// not be able to hold it. Eight per 8 ms tick is a thousand a second — far
-/// past anything a legitimate plugin needs, and bounded.
+/// Commands taken from any one plugin per worker pass. One thread serves every
+/// pane in the repository, so a plugin that writes without pause must not be able
+/// to hold it. A host that fills this budget drains the rest at
+/// [`COMMAND_DRAIN_PACE`], which holds it to the thousand a second that is far past
+/// anything a legitimate plugin needs.
 pub(super) const MAX_COMMANDS_PER_TICK: usize = 8;
+
+/// How long a host that filled [`MAX_COMMANDS_PER_TICK`] waits before the next
+/// drain. The worker used to tick this often; keeping it here holds a plugin that
+/// outruns the budget to that same pace instead of spinning the worker.
+pub(super) const COMMAND_DRAIN_PACE: Duration = Duration::from_millis(8);
 
 pub(super) struct Plugins {
     /// Live plugin children, by configured name.
@@ -57,6 +64,12 @@ pub(super) struct Plugins {
     pub(super) idle_announced: HashSet<PaneId>,
     /// The repository the panes run in, reported with every `PaneOpened`.
     pub(super) cwd: String,
+    /// The worker's wake signal, handed to every host it launches so a plugin's
+    /// command wakes the worker that has to judge it.
+    pub(super) waker: Option<WakeHandle>,
+    /// Whether the last drain stopped at a host's per-tick budget, so more
+    /// commands are waiting and the pass cannot wait out a longer deadline.
+    pub(super) commands_capped: bool,
 }
 
 impl Plugins {
@@ -70,7 +83,12 @@ impl Plugins {
     /// A plugin that will not launch is logged and left out: its panes then
     /// behave exactly like unwatched ones, so a broken plugin costs the
     /// operator a warning rather than a terminal.
-    pub(super) fn start(cwd: &str, configs: &[PluginConfig], startup: &[StartupCommand]) -> Self {
+    pub(super) fn start(
+        cwd: &str,
+        configs: &[PluginConfig],
+        startup: &[StartupCommand],
+        waker: Option<WakeHandle>,
+    ) -> Self {
         let dir = crate::plugin::registry::default_plugins_dir()
             .inspect_err(|error| {
                 tracing::debug!(%error, "viewer: no plugin directory; resolving plugins on PATH");
@@ -91,7 +109,7 @@ impl Plugins {
             if !cfg.enabled || !(opted_in || cfg.watch_on_signal) {
                 continue;
             }
-            match PluginHost::spawn(cfg, dir.as_deref(), runtime_dir.as_deref()) {
+            match PluginHost::spawn(cfg, dir.as_deref(), runtime_dir.as_deref(), waker.clone()) {
                 Ok(host) => {
                     allowed_flags.insert(cfg.name.clone(), cfg.allowed_resume_flags.clone());
                     if cfg.watch_on_signal {
@@ -119,6 +137,8 @@ impl Plugins {
             pending: HashMap::new(),
             idle_announced: HashSet::new(),
             cwd: cwd.to_string(),
+            waker,
+            commands_capped: false,
         }
     }
 

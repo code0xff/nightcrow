@@ -9,6 +9,10 @@ use std::time::{Duration, Instant};
 pub(super) struct Client {
     pub(super) id: u64,
     pub(super) tx: SyncSender<TerminalFrame>,
+    /// Frames broadcast while this client's replay is still being framed, held
+    /// so they can only follow it. `None` once the replay is queued — from then
+    /// on frames go straight to `tx` (see [`super::hub_connect::TerminalHub::connect`]).
+    pub(super) replay_held: Option<Vec<TerminalFrame>>,
     /// Used to close the socket when this client's queue overflows. Dropping
     /// from the broadcast list alone stops frames but leaves the connection
     /// thread parked — closing the socket is what turns that into a real
@@ -16,8 +20,10 @@ pub(super) struct Client {
     /// daemon's bridge, whose backpressure is applied a layer out).
     pub(super) socket: Option<std::net::TcpStream>,
     /// Registration with the session's size ownership — names the screen behind
-    /// this connection, tracked across every repository.
-    pub(super) connection: u64,
+    /// this connection, tracked across every repository. Filled in after the
+    /// replay is queued, because the registration's verdict must not overtake
+    /// the replay; until then no caller can reach this connection.
+    pub(super) connection: Option<u64>,
 }
 
 impl Client {
@@ -43,6 +49,21 @@ pub struct TerminalSession {
     pub(super) reports: std::sync::Mutex<ReportBudget>,
 }
 
+/// The outcome of waiting for a frame, including the two ways a wait can end
+/// without one.
+///
+/// [`TerminalSession::next_frame`] folds these into an `Option` because most
+/// callers only want the frame. A transport that parks a thread on the wait
+/// needs to tell them apart: a timeout means it should wait again, while a
+/// closed channel means the hub has let this connection go and nothing more
+/// will ever arrive.
+#[derive(Debug)]
+pub enum FrameWait {
+    Frame(TerminalFrame),
+    Idle,
+    Closed,
+}
+
 impl TerminalSession {
     /// This session's client id, as stamped on the panes this session asked for.
     pub fn client_id(&self) -> u64 {
@@ -51,11 +72,35 @@ impl TerminalSession {
 
     /// Wait up to `timeout` for the next frame to write.
     pub fn next_frame(&self, timeout: Duration) -> Option<TerminalFrame> {
-        self.rx
+        match self.wait_frame(timeout) {
+            FrameWait::Frame(frame) => Some(frame),
+            FrameWait::Idle | FrameWait::Closed => None,
+        }
+    }
+
+    /// Wait for a frame, saying which way the wait ended.
+    pub fn wait_frame(&self, timeout: Duration) -> FrameWait {
+        match self
+            .rx
             .lock()
             .expect("terminal session receiver poisoned")
             .recv_timeout(timeout)
-            .ok()
+        {
+            Ok(frame) => FrameWait::Frame(frame),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => FrameWait::Idle,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => FrameWait::Closed,
+        }
+    }
+
+    /// Unregister from the hub now, rather than when the last handle drops.
+    ///
+    /// Idempotent: `disconnect` ignores a client and a connection it does not
+    /// know, so the `Drop` below repeating it changes nothing. A transport that
+    /// shares this session with a thread waiting on its frames needs the
+    /// release to happen before that thread can be joined — its queue closing
+    /// is what ends the wait.
+    pub fn close(&self) {
+        self.hub.disconnect(self.id, self.connection);
     }
 
     /// Handle a decoded control message from this client.
@@ -124,7 +169,7 @@ impl TerminalSession {
         // send would then wedge every connection thread for this repository.
         // Dropping a command under that much backpressure is the honest
         // outcome; the client is already far ahead of what the shell can take.
-        if let Err(TrySendError::Full(_)) = self.hub.commands.try_send(command) {
+        if let Err(TrySendError::Full(_)) = self.hub.submit(command) {
             tracing::debug!("viewer: terminal command queue full, dropping");
         }
     }

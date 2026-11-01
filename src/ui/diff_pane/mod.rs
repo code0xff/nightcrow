@@ -1,12 +1,16 @@
 mod cache;
 mod highlight;
+mod highlight_cache;
 mod search;
 mod split;
 #[cfg(test)]
 mod tests;
 
 pub(crate) use highlight::highlight_line_segments;
-pub use highlight::{DIFF_THEME, HighlightSegment};
+pub use highlight::{DIFF_THEME, HIGHLIGHT_LINE_CAP, HighlightSegment};
+pub(crate) use highlight::{
+    HighlightCheckpoint, LineHighlighter, LineHighlighterPair, PairCheckpoint,
+};
 pub use search::DiffSearch;
 pub(crate) use search::nearest_match_index;
 pub(crate) use split::{flush_split_blocks, resolve_syntax_extension};
@@ -46,13 +50,27 @@ pub struct DiffPane {
     /// render/search indexes observe one generation boundary.
     hunks: Vec<DiffHunk>,
     /// Lowercased copy of each `DiffLine::content` aligned with `hunks`,
-    /// built once per diff load so per-keystroke search does not
-    /// re-lowercase.
+    /// built on demand by `ensure_lower_cache`: a load without an active
+    /// search skips the lowercase pass, and per-keystroke search only pays it
+    /// once per generation.
     pub(crate) hunks_lines_lower: Vec<Vec<String>>,
     /// Cached syntect highlight output per body line. Built once when hunks
     /// (or the active syntax) change so the renderer skips the full-document
     /// state-recovery pass.
     pub line_highlights: Vec<Vec<Vec<HighlightSegment>>>,
+    /// Highlight output of the previous generation, kept so a diff that only
+    /// appends can move its unchanged hunk prefix into the new cache.
+    previous_highlights: Vec<Vec<Vec<HighlightSegment>>>,
+    /// Hunks that produced `previous_highlights`, kept for that comparison.
+    /// Truncated to the highlighted hunks so a capped diff does not retain
+    /// text the next comparison can never reach.
+    previous_hunks: Vec<DiffHunk>,
+    /// Saved state after each cache entry of the previous pass, aligned with
+    /// `previous_highlights`, so highlighting can resume at its end.
+    previous_checkpoints: Vec<PairCheckpoint>,
+    /// Saved state after each cache entry of the current pass, moved to
+    /// `previous_checkpoints` by the next `set_hunks`.
+    highlight_checkpoints: Vec<PairCheckpoint>,
     /// Monotonic identity of the currently loaded diff. Derived caches carry
     /// this generation rather than inspecting the hunks during rendering.
     pub(crate) generation: u64,

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useCallback, useEffect } from "react";
 import type { CSSProperties } from "react";
 import { MAX_SIDEBAR_VIEWPORT_FRACTION } from "../../hooks/ui/sidebar";
 import { Sidebar } from "../repository/Sidebar";
@@ -94,6 +94,13 @@ export function RepoShell({
   // makes this cleanup run on unmount and nowhere else.
   useEffect(() => onUpperDragCancel, [onUpperDragCancel]);
 
+  // Stable, so a render caused by a status event does not reach the memoized
+  // terminal panel through its toolbar callback.
+  const toggleTerminalMaximized = useCallback(
+    () => setMaximized((m) => (m === "terminal" ? "none" : "terminal")),
+    [setMaximized],
+  );
+
   return (
     <>
       {/* Keep the resize cursor and prevent selection during dragging. */}
@@ -171,9 +178,7 @@ export function RepoShell({
           <TerminalPanel
             repo={repo}
             maximized={maximized === "terminal"}
-            onToggleMaximized={() =>
-              setMaximized((m) => (m === "terminal" ? "none" : "terminal"))
-            }
+            onToggleMaximized={toggleTerminalMaximized}
             // A maximized file pane leaves this panel a zero-height track; clip
             // it there, or its toolbar paints over the footer and hint line.
             className={`nc-fade-in ${mobileView === "terminal" ? "flex" : "hidden md:flex"} ${

@@ -143,7 +143,7 @@ fn input_writer_failure_rejects_later_submissions() {
 fn output_reader_preserves_fifo_with_a_bounded_channel() {
     let expected: Vec<u8> = (0..(3 * 4096 + 17)).map(|index| index as u8).collect();
     let (tx, rx) = mpsc::sync_channel(1);
-    let reader = spawn_output_reader(Cursor::new(expected.clone()), tx);
+    let reader = spawn_output_reader(Cursor::new(expected.clone()), tx, None);
     let mut actual = Vec::new();
     loop {
         match rx.recv_timeout(IO_TEST_DEADLINE).expect("reader event") {
@@ -170,6 +170,7 @@ fn dropping_a_full_output_receiver_unblocks_sender_and_drains_reader() {
             started: Some(read_started_tx),
         },
         tx,
+        None,
     );
     read_started_rx
         .recv_timeout(IO_TEST_DEADLINE)

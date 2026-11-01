@@ -6,6 +6,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
+use std::ops::Range;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -42,6 +43,56 @@ pub(crate) fn status_color(status: StatusKind) -> Color {
 /// F-keys select project tabs.
 pub(crate) fn jump_legend(app: &App, digit: char) -> String {
     format!("{} {}", leader_label_of(app.interaction.leader), digit)
+}
+
+/// Whether a list renderer builds every row or only the visible window.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RowsScope {
+    Window,
+    #[cfg(test)]
+    Full,
+}
+
+/// Rows a list of `total` entries shows in `area` with `selected` on the last
+/// visible line. `render_selectable_list` starts from a fresh `ListState`, so
+/// the selection always sits at the bottom once past the first page; this
+/// reproduces that offset so only the visible slice needs building.
+///
+/// `area` includes the block borders.
+pub(crate) fn list_window(total: usize, area: Rect, selected: Option<usize>) -> Range<usize> {
+    let height = area.height.saturating_sub(2) as usize;
+    if total == 0 || height == 0 {
+        return 0..0;
+    }
+    let selected = selected.map(|index| index.min(total - 1));
+    let offset = selected.map_or(0, |index| index.saturating_sub(height - 1));
+    offset..(offset + height).min(total)
+}
+
+pub(crate) fn rows_to_render(
+    scope: RowsScope,
+    total: usize,
+    area: Rect,
+    selected: Option<usize>,
+) -> Range<usize> {
+    match scope {
+        RowsScope::Window => list_window(total, area, selected),
+        #[cfg(test)]
+        RowsScope::Full => 0..total,
+    }
+}
+
+/// Selection index inside the rendered slice, or `None` when the slice does
+/// not contain it (an empty area).
+pub(crate) fn windowed_selection(selected: Option<usize>, window: &Range<usize>) -> Option<usize> {
+    selected
+        .filter(|index| window.contains(index))
+        .map(|index| index - window.start)
+}
+
+/// Position of `selected` in an ascending filter cache.
+pub(crate) fn filtered_position(filtered: &[usize], selected: usize) -> Option<usize> {
+    filtered.binary_search(&selected).ok()
 }
 
 pub(crate) fn render_selectable_list(

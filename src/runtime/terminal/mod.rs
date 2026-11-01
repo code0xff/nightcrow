@@ -5,6 +5,7 @@ use std::time::Instant;
 
 mod attention;
 mod escape;
+mod events;
 mod input;
 mod lifecycle;
 mod recovery;
@@ -15,6 +16,7 @@ mod state;
 mod sync;
 
 pub(crate) use escape::strip_escape_sequences;
+pub(crate) use events::PollOutcome;
 pub use recovery::PaneRecovery;
 
 /// Upper bound on a pane's in-flight prompt buffer before further chars are

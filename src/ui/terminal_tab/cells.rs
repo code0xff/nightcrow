@@ -18,23 +18,27 @@ pub(crate) struct VisiblePaneCell {
     pub bordered: bool,
 }
 
+/// Panes the current split window draws, in draw order.
+pub(crate) fn visible_pane_ids(app: &App) -> impl Iterator<Item = PaneId> + '_ {
+    let visible = visible_range(
+        app.terminal.visible_start,
+        app.terminal.active,
+        app.terminal.panes.len(),
+        app.terminal.max_visible(),
+    );
+    app.terminal.panes[visible].iter().map(|pane| pane.id)
+}
+
 /// Lay out every currently visible pane inside `content_area` (the terminal
 /// body, below the tab row). Single source of truth for pane sizing: `render`
 /// draws from it and `visible_pane_content_areas` (used to resize each pane's
 /// PTY) reads from it, so a pane's backend/emulator size always matches what
 /// is drawn on screen.
 pub(crate) fn visible_pane_cells(app: &App, content_area: Rect) -> Vec<VisiblePaneCell> {
-    let pane_count = app.terminal.panes.len();
-    let visible = visible_range(
-        app.terminal.visible_start,
-        app.terminal.active,
-        pane_count,
-        app.terminal.max_visible(),
-    );
-    if visible.is_empty() {
+    let visible_ids: Vec<PaneId> = visible_pane_ids(app).collect();
+    if visible_ids.is_empty() {
         return Vec::new();
     }
-    let visible_ids: Vec<PaneId> = app.terminal.panes[visible].iter().map(|p| p.id).collect();
 
     if visible_ids.len() == 1 {
         return vec![VisiblePaneCell {

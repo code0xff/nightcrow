@@ -1,7 +1,7 @@
 import type { CSSProperties, MutableRefObject } from "react";
 import type { CellPlacement } from "../../lib/terminal/terminalLayout";
 import type { RecoveryByPane } from "../../lib/terminal/recovery";
-import { stackedCellStyle, type PaneViewMode } from "../../lib/terminal/paneViewMode";
+import { STACKED_STACK_CLASS, stackedCellStyle, type PaneViewMode } from "../../lib/terminal/paneViewMode";
 import { TerminalCell } from "./TerminalCell";
 import { StartupSlots } from "./StartupSlots";
 import { useLayoutFade } from "../../hooks/terminal/useLayoutFade";
@@ -91,7 +91,7 @@ export function PaneGrid({
   return (
     <div
       ref={containerRef}
-      className={tabs ? "relative h-full" : "grid h-full gap-1"}
+      className={tabs ? STACKED_STACK_CLASS : "grid h-full gap-1"}
       style={
         tabs
           ? undefined

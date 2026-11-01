@@ -159,5 +159,6 @@ impl App {
                 table.insert(path.clone(), *new_mtime);
             }
         }
+        self.git.view.status.invalidate_hot_deadline();
     }
 }

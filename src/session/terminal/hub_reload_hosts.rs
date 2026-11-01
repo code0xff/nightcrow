@@ -20,7 +20,12 @@ impl Plugins {
         outcome: &mut PluginReload,
     ) -> bool {
         let dir = crate::plugin::registry::default_plugins_dir().ok();
-        match crate::plugin::PluginHost::spawn(cfg, dir.as_deref(), self.runtime_dir.as_deref()) {
+        match crate::plugin::PluginHost::spawn(
+            cfg,
+            dir.as_deref(),
+            self.runtime_dir.as_deref(),
+            self.waker.clone(),
+        ) {
             Ok(host) => {
                 self.allowed_flags
                     .insert(cfg.name.clone(), cfg.allowed_resume_flags.clone());

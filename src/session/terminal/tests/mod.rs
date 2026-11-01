@@ -4,6 +4,9 @@
 mod attention;
 mod backpressure;
 mod behavior;
+mod broadcast;
+mod drain_pacing;
+mod frames;
 mod identity;
 mod modes;
 mod normal_records;
@@ -13,205 +16,102 @@ mod plugin_rules;
 mod plugin_slots;
 mod plugin_watch;
 mod plugins;
+mod pty_fixture;
 mod reattach;
 mod recovery;
 mod recovery_replay;
+mod replay_budget;
 mod replay_complete;
+mod replay_delivery;
+mod replay_fidelity;
+mod replay_locking;
+mod replay_record;
+mod replay_registration;
+mod replay_window;
 mod ring;
 mod screen_records;
 mod screen_replay;
 mod scrollback_depth;
 mod size_owner;
 mod size_owner_resize_race;
+mod snapshot_cycles;
+mod snapshot_desk;
+mod snapshot_pace;
+mod snapshot_pty_windows;
+mod snapshot_resize_pace;
+mod snapshot_throttle;
+mod snapshot_trailing;
 mod startup;
 mod startup_policy;
+mod waiting;
+mod wakeup;
+mod wakeup_deadline;
 mod wire;
 mod zoom;
 
 use crate::backend::PaneId;
-use crate::session::terminal::frame::TerminalFrame;
+use crate::session::terminal::{ConcurrencyTestPoint, TerminalHub};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use super::TerminalSession;
 
-/// Deadline for the real-shell tests below. `connect` spawns the user's
-/// actual `$SHELL` (an interactive zsh sources its full rc chain), and
-/// cargo runs tests in parallel, so several shells initialize at once — a
-/// tighter budget was measurably flaky under load. A generous bound only
-/// delays the failure verdict; passing runs still finish the instant the
-/// frame arrives. Mirrors `backend::pty::tests::PTY_TEST_DEADLINE`.
-pub(super) const SHELL_TEST_DEADLINE: Duration = Duration::from_secs(15);
+use frames::{
+    created_pane, created_requester, created_size, created_title, exited_pane, hello_client,
+    hello_panes, pending_count, reordered_order, resized_size, zoomed_pane,
+};
 
-pub(super) fn wait_for<T>(mut take: impl FnMut() -> Option<T>) -> Option<T> {
+pub(super) use waiting::{SHELL_TEST_DEADLINE, next_matching, wait_for};
+
+/// How long a test waits for a connection to reach a point a hook announces.
+pub(super) const HOOK_DEADLINE: Duration = Duration::from_secs(5);
+
+/// How long a hub may take to notice work once its worker is parked. The wake
+/// tests raise the worker's otherwise one-second cap far above this, so a missing
+/// signal is what fails their deadline rather than the cap.
+pub(super) const PROMPT: Duration = Duration::from_secs(3);
+
+/// Wait until the worker is parked on its wake signal: its pass count has stopped
+/// moving for longer than a pass takes, and no deadline is waiting to bring it
+/// back. A pending pace or drain deadline is not a signal, so a test that means to
+/// prove a producer woke the worker must not pass on one.
+pub(super) fn wait_until_parked(hub: &Arc<TerminalHub>) {
     let deadline = Instant::now() + SHELL_TEST_DEADLINE;
+    let mut last = hub.worker_passes();
+    let mut quiet_since = Instant::now();
     while Instant::now() < deadline {
-        if let Some(value) = take() {
-            return Some(value);
-        }
         thread::sleep(Duration::from_millis(10));
+        let passes = hub.worker_passes();
+        if passes != last {
+            last = passes;
+            quiet_since = Instant::now();
+        } else if quiet_since.elapsed() >= Duration::from_millis(50)
+            && hub.worker_deadline().is_none()
+        {
+            return;
+        }
     }
-    None
+    panic!("the worker never parked");
 }
 
-/// Pull frames until one satisfies `want`, ignoring the rest.
-pub(super) fn next_matching(
-    session: &TerminalSession,
-    mut want: impl FnMut(&TerminalFrame) -> bool,
-) -> Option<TerminalFrame> {
-    wait_for(|| {
-        session
-            .next_frame(Duration::from_millis(50))
-            .filter(|f| want(f))
-    })
-}
-
-pub(super) fn created_pane(frame: &TerminalFrame) -> Option<PaneId> {
-    let TerminalFrame::Control(json) = frame else {
-        return None;
-    };
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    if value["type"] == "created" {
-        return value["pane"].as_u64().map(|n| n as PaneId);
-    }
-    None
-}
-
-/// The pane an `exited` frame announces the end of.
-pub(super) fn exited_pane(frame: &TerminalFrame) -> Option<PaneId> {
-    let TerminalFrame::Control(json) = frame else {
-        return None;
-    };
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    if value["type"] != "exited" {
-        return None;
-    }
-    value["pane"].as_u64().map(|n| n as PaneId)
-}
-
-/// The pane count a `pending` frame offers for sizing.
-pub(super) fn pending_count(frame: &TerminalFrame) -> Option<usize> {
-    let TerminalFrame::Control(json) = frame else {
-        return None;
-    };
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    if value["type"] != "pending" {
-        return None;
-    }
-    value["count"].as_u64().map(|n| n as usize)
-}
-
-/// The name a `created` frame gives its pane, if the session named it.
-pub(super) fn created_title(frame: &TerminalFrame) -> Option<String> {
-    let TerminalFrame::Control(json) = frame else {
-        return None;
-    };
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    if value["type"] != "created" {
-        return None;
-    }
-    value["title"].as_str().map(str::to_string)
-}
-
-/// The size a `created` frame reports for its pane.
-pub(super) fn created_size(frame: &TerminalFrame) -> Option<(u16, u16)> {
-    let TerminalFrame::Control(json) = frame else {
-        return None;
-    };
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    if value["type"] != "created" {
-        return None;
-    }
-    Some((
-        value["rows"].as_u64()? as u16,
-        value["cols"].as_u64()? as u16,
-    ))
-}
-
-/// The size a `resized` frame reports. Broadcast once the worker has actually
-/// applied a resize, so a test that needs the new size to be in effect waits
-/// for this rather than guessing at the worker's timing.
-pub(super) fn resized_size(frame: &TerminalFrame) -> Option<(u16, u16)> {
-    let TerminalFrame::Control(json) = frame else {
-        return None;
-    };
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    if value["type"] != "resized" {
-        return None;
-    }
-    Some((
-        value["rows"].as_u64()? as u16,
-        value["cols"].as_u64()? as u16,
-    ))
-}
-
-pub(super) fn reordered_order(frame: &TerminalFrame) -> Option<Vec<PaneId>> {
-    let TerminalFrame::Control(json) = frame else {
-        return None;
-    };
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    if value["type"] != "reordered" {
-        return None;
-    }
-    Some(
-        value["order"]
-            .as_array()?
-            .iter()
-            .filter_map(|v| v.as_u64().map(|n| n as PaneId))
-            .collect(),
-    )
-}
-
-/// The id a `hello` frame gives the client it is addressed to.
-pub(super) fn hello_client(frame: &TerminalFrame) -> Option<u64> {
-    let TerminalFrame::Control(json) = frame else {
-        return None;
-    };
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    if value["type"] != "hello" {
-        return None;
-    }
-    value["client"].as_u64()
-}
-
-/// How many panes a `hello` frame promises the replay will deliver.
-pub(super) fn hello_panes(frame: &TerminalFrame) -> Option<usize> {
-    let TerminalFrame::Control(json) = frame else {
-        return None;
-    };
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    if value["type"] != "hello" {
-        return None;
-    }
-    value["panes"].as_u64().map(|n| n as usize)
-}
-
-/// Who a `created` frame names as having asked for the pane, and `Some(None)`
-/// when it names nobody — a replayed pane, or one another client opened.
-pub(super) fn created_requester(frame: &TerminalFrame) -> Option<Option<u64>> {
-    let TerminalFrame::Control(json) = frame else {
-        return None;
-    };
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    if value["type"] != "created" {
-        return None;
-    }
-    Some(value["client"].as_u64())
-}
-
-/// What a `zoomed` frame says fills the panel: `Some(None)` is the frame that
-/// says nothing does, `None` is not a `zoomed` frame at all. The two have to be
-/// told apart — "no zoom" is a state the hub announces, not only one it starts
-/// in.
-pub(super) fn zoomed_pane(frame: &TerminalFrame) -> Option<Option<PaneId>> {
-    let TerminalFrame::Control(json) = frame else {
-        return None;
-    };
-    let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    if value["type"] != "zoomed" {
-        return None;
-    }
-    Some(value["pane"].as_u64().map(|n| n as PaneId))
+/// Hold the next connection at the replay boundary: the receiver fires once the
+/// hub's state lock is free again and the replay is not framed yet, and sending on
+/// the returned sender lets it continue.
+///
+/// The gate is one-shot: a test that connects anything else afterwards installs a
+/// no-op hook first.
+pub(super) fn pause_at_framing(hub: &Arc<TerminalHub>) -> (mpsc::Receiver<()>, mpsc::Sender<()>) {
+    let (framing, reached) = mpsc::channel();
+    let (resume, wait) = mpsc::channel();
+    let wait = Mutex::new(wait);
+    hub.set_concurrency_test_hook(move |point| {
+        if point == ConcurrencyTestPoint::ReplayFraming {
+            framing.send(()).ok();
+            wait.lock().expect("resume gate poisoned").recv().ok();
+        }
+    });
+    (reached, resume)
 }
 
 /// Collect the ids of the first `n` distinct panes announced to `session`,

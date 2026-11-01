@@ -18,6 +18,8 @@
 pub mod frame;
 mod hub_attention;
 mod hub_connect;
+mod hub_connect_guard;
+mod hub_deadline;
 mod hub_diag;
 #[cfg(test)]
 mod hub_diag_tests;
@@ -25,6 +27,7 @@ mod hub_events;
 mod hub_helpers;
 mod hub_layout;
 mod hub_modes;
+mod hub_output;
 mod hub_panes;
 mod hub_plugins;
 mod hub_plugins_slots;
@@ -33,6 +36,7 @@ mod hub_relaunch;
 mod hub_reload;
 mod hub_reload_hosts;
 mod hub_replay;
+mod hub_replay_record;
 mod hub_run;
 mod hub_zoom;
 mod session;
@@ -45,8 +49,9 @@ mod startup_run;
 #[cfg(test)]
 pub use frame::decode_output;
 pub use frame::{ClientMessage, PaneSize, TerminalFrame, encode_output};
-pub use session::TerminalSession;
+pub use session::{FrameWait, TerminalSession};
 
+use crate::platform::threading::{Wake, WakeHandle};
 use crate::session::size_owner::SizeOwnership;
 use hub_helpers::{Command, PendingResize, Shared};
 use std::collections::{BTreeMap, BTreeSet};
@@ -63,6 +68,9 @@ pub(super) enum ConcurrencyTestPoint {
     ResizeBroadcastComplete,
     DisconnectStateAcquired,
     DisconnectStateContended,
+    /// Taken after `connect` has snapshotted a replay and released the hub
+    /// state lock, before it frames or queues any of it.
+    ReplayFraming,
 }
 
 #[cfg(test)]
@@ -107,8 +115,13 @@ pub struct TerminalHub {
     cwd: String,
     /// The session's listeners for panes asking for attention.
     notices: Arc<crate::session::notice::Notices>,
+    /// What the worker parks on between passes. Every producer that the worker
+    /// used to discover by polling signals this instead (see [`hub_deadline`]).
+    wake: WakeHandle,
     #[cfg(test)]
     concurrency_test_hook: Mutex<Option<ConcurrencyTestHook>>,
+    #[cfg(test)]
+    probe: test_api::WorkerProbe,
 }
 
 impl TerminalHub {
@@ -142,6 +155,8 @@ impl TerminalHub {
         notices: Arc<crate::session::notice::Notices>,
     ) -> Arc<Self> {
         let (commands, command_rx) = mpsc::sync_channel::<Command>(256);
+        let wake: WakeHandle = Arc::new(Wake::default());
+        ownership.attach(&wake);
         let hub = Arc::new(Self {
             commands,
             pending_closes: Mutex::new(BTreeSet::new()),
@@ -164,8 +179,11 @@ impl TerminalHub {
             ownership,
             cwd: cwd.to_string(),
             notices,
+            wake,
             #[cfg(test)]
             concurrency_test_hook: Mutex::new(None),
+            #[cfg(test)]
+            probe: test_api::WorkerProbe::default(),
         });
 
         let worker_hub = Arc::clone(&hub);
@@ -189,7 +207,7 @@ impl TerminalHub {
             message,
             reply,
         };
-        if self.commands.try_send(command).is_err() {
+        if self.submit(command).is_err() {
             return false;
         }
         answer
@@ -237,40 +255,11 @@ impl TerminalHub {
         state.reserved = state.reserved.saturating_sub(count);
     }
 
-    #[cfg(test)]
-    pub fn client_count(&self) -> usize {
-        self.state
-            .lock()
-            .expect("terminal state poisoned")
-            .clients
-            .len()
-    }
-
-    #[cfg(test)]
-    pub(super) fn set_concurrency_test_hook(
-        &self,
-        hook: impl Fn(ConcurrencyTestPoint) + Send + Sync + 'static,
-    ) {
-        *self
-            .concurrency_test_hook
-            .lock()
-            .expect("terminal concurrency test hook poisoned") = Some(Arc::new(hook));
-    }
-
-    #[cfg(test)]
-    pub(super) fn run_concurrency_test_hook(&self, point: ConcurrencyTestPoint) {
-        let hook = self
-            .concurrency_test_hook
-            .lock()
-            .expect("terminal concurrency test hook poisoned")
-            .clone();
-        if let Some(hook) = hook {
-            hook(point);
-        }
-    }
-
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Release);
+        // A worker parked on its wake signal would otherwise sit out its cap
+        // before noticing, and shutdown is the one caller that cannot wait.
+        self.wake.wake();
         let handle = self
             .worker
             .lock()
@@ -290,6 +279,10 @@ impl Drop for TerminalHub {
         self.stop();
     }
 }
+
+#[cfg(test)]
+#[path = "test_api.rs"]
+mod test_api;
 
 #[cfg(test)]
 mod tests;

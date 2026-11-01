@@ -4,8 +4,9 @@
 
 use crate::git::tree::TreeEntry;
 use crate::ui::SearchQuery;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VisibleRow {
@@ -24,16 +25,24 @@ pub(crate) struct TreeIndexEntry {
     pub name_lower: String,
 }
 
+/// Memoized visible rows, dropped when the revision or search state moves.
+struct RowsCache {
+    revision: u64,
+    search_active: bool,
+    query: String,
+    rows: Arc<Vec<VisibleRow>>,
+}
+
 #[derive(Default)]
 pub struct TreeView {
     pub selected: usize,
     pub scroll_x: usize,
     /// Repo-relative expanded directory paths. The root (`""`) is implicitly
     /// expanded and never stored here.
-    pub expanded: BTreeSet<String>,
+    expanded: BTreeSet<String>,
     /// Lazily-populated children, keyed by repo-relative directory path.
     /// Absent = unread; empty vec = read and genuinely empty.
-    pub cache: HashMap<String, Vec<TreeEntry>>,
+    cache: HashMap<String, Vec<TreeEntry>>,
     /// Memoized longest visible-row char width, keyed by row count.
     pub(crate) row_width_cache: Cell<Option<(usize, usize)>>,
     pub search_active: bool,
@@ -44,9 +53,40 @@ pub struct TreeView {
     show_set: HashSet<String>,
     /// Count of entries matching the current query.
     pub(crate) match_count: usize,
+    /// Bumped by every cache/expansion mutation; guards `rows_cache`.
+    rows_revision: Cell<u64>,
+    rows_cache: RefCell<Option<RowsCache>>,
 }
 
 impl TreeView {
+    pub(crate) fn cache(&self) -> &HashMap<String, Vec<TreeEntry>> {
+        &self.cache
+    }
+
+    pub(crate) fn cache_mut(&mut self) -> &mut HashMap<String, Vec<TreeEntry>> {
+        self.invalidate_rows();
+        &mut self.cache
+    }
+
+    pub fn expanded(&self) -> &BTreeSet<String> {
+        &self.expanded
+    }
+
+    pub(crate) fn expanded_mut(&mut self) -> &mut BTreeSet<String> {
+        self.invalidate_rows();
+        &mut self.expanded
+    }
+
+    pub(crate) fn set_expanded(&mut self, expanded: BTreeSet<String>) {
+        self.expanded = expanded;
+        self.invalidate_rows();
+    }
+
+    fn invalidate_rows(&self) {
+        self.rows_revision
+            .set(self.rows_revision.get().wrapping_add(1));
+    }
+
     /// An open overlay with an empty query still shows the expansion view so
     /// the tree does not explode before the user types.
     pub fn search_filtering(&self) -> bool {
@@ -60,6 +100,7 @@ impl TreeView {
         self.show_set.clear();
         self.match_count = 0;
         self.row_width_cache.set(None);
+        self.invalidate_rows();
     }
 
     /// Each match contributes itself and every ancestor so the filtered view
@@ -95,11 +136,31 @@ impl TreeView {
                 }
             }
         }
+        self.invalidate_rows();
     }
 
-    /// Only expanded, cached directories contribute children, so this never
-    /// triggers I/O. While filtering, the row list is restricted to `show_set`.
-    pub fn visible_rows(&self) -> Vec<VisibleRow> {
+    /// Visible rows shared with the renderer and navigation. Rebuilt only when
+    /// the child cache, expanded set, or search state changes; callers that
+    /// run per frame clone the `Arc` instead of every row's strings.
+    pub(crate) fn rows(&self) -> Arc<Vec<VisibleRow>> {
+        if let Some(cached) = self.rows_cache.borrow().as_ref()
+            && cached.revision == self.rows_revision.get()
+            && cached.search_active == self.search_active
+            && cached.query == self.search_query.as_str()
+        {
+            return Arc::clone(&cached.rows);
+        }
+        let rows = Arc::new(self.build_rows());
+        *self.rows_cache.borrow_mut() = Some(RowsCache {
+            revision: self.rows_revision.get(),
+            search_active: self.search_active,
+            query: self.search_query.as_str().to_string(),
+            rows: Arc::clone(&rows),
+        });
+        rows
+    }
+
+    fn build_rows(&self) -> Vec<VisibleRow> {
         let mut rows = Vec::new();
         if self.search_filtering() {
             self.push_children_filtered("", 0, &mut rows);
@@ -107,6 +168,13 @@ impl TreeView {
             self.push_children("", 0, &mut rows);
         }
         rows
+    }
+
+    /// Only expanded, cached directories contribute children, so this never
+    /// triggers I/O. While filtering, the row list is restricted to `show_set`.
+    #[cfg(test)]
+    pub fn visible_rows(&self) -> Vec<VisibleRow> {
+        (*self.rows()).clone()
     }
 
     /// Renders every kept directory as expanded so the full path to each
@@ -163,9 +231,7 @@ impl TreeView {
 
     /// Used to persist/restore the cursor across sessions and refreshes.
     pub fn selected_path(&self) -> Option<String> {
-        self.visible_rows()
-            .get(self.selected)
-            .map(|r| r.path.clone())
+        self.rows().get(self.selected).map(|r| r.path.clone())
     }
 
     /// So a collapse or refresh can never leave the cursor past the end.

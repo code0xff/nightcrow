@@ -2,7 +2,9 @@
 //! front of one, and the two sends that address a single client.
 
 use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_replay::{ReplayQueue, replay_pane};
+use super::hub_connect_guard::RegistrationGuard;
+use super::hub_helpers::queue_locked;
+use super::hub_replay::{PaneReplay, ReplayQueue, replay_pane};
 use super::session::{Client, ReportBudget};
 use super::{CLIENT_QUEUE_DEPTH, TerminalHub, TerminalSession};
 use crate::session::size_owner::ViewerId;
@@ -14,10 +16,15 @@ use std::time::Instant;
 impl TerminalHub {
     /// Register a client and put the current terminals in front of it before it
     /// is eligible for broadcasts: `Hello`, optional zoom, each live pane's
-    /// `Created` and screen (see [`replay_pane`]), then `ReplayComplete`. Done
-    /// under the state lock so this snapshot cannot interleave with the worker's
-    /// append-and-broadcast — the client receives the replay boundary ahead of
-    /// ownership verdicts and the live stream.
+    /// `Created` and screen (see [`replay_pane`]), then `ReplayComplete`.
+    ///
+    /// Only the snapshot is taken under the state lock: the bytes of every pane's
+    /// record, which is one copy each, so this cannot interleave with the worker's
+    /// append-and-broadcast. The client is registered in the same critical
+    /// section with its replay gate closed, so a broadcast from then on is held
+    /// rather than queued ahead of the replay. Framing and sending that snapshot
+    /// run with the lock released, and the held frames are released after it —
+    /// which is what keeps a large attach from stalling every other pane.
     ///
     /// `viewer` names who this connection belongs to and `arriving` records the
     /// client's new-screen/reconnect distinction; connecting never preempts an
@@ -34,7 +41,6 @@ impl TerminalHub {
         let id = self.next_client_id.fetch_add(1, Ordering::AcqRel);
         let (tx, rx) = mpsc::sync_channel(CLIENT_QUEUE_DEPTH + 1);
         let mut state = self.state.lock().expect("terminal state poisoned");
-        let mut replay_queue = ReplayQueue::new(&tx);
         // A hub whose worker has stopped (its repo was retired) still lingers
         // behind the `Arc` a racing connection resolved, but its panes are dead
         // and will never emit another frame. Skip the replay so the client is
@@ -43,82 +49,127 @@ impl TerminalHub {
         let replaying = !self.stop.load(Ordering::Acquire);
         let to_replay = if replaying { state.panes.len() } else { 0 };
         // Before anything that carries a requester id, so the client can judge
-        // every one it is about to see, and before the panes it counts. Straight
-        // onto the queue rather than through `send_to`, which would need this
-        // client to be registered — and it must not be until the replay below is
-        // on the queue ahead of any broadcast.
-        if let Ok(json) = serde_json::to_string(&ServerMessage::Hello {
+        // every one it is about to see, and before the panes it counts.
+        let hello = serde_json::to_string(&ServerMessage::Hello {
             client: id,
             panes: to_replay,
-        }) {
+        })
+        .ok();
+        // Ahead of the panes, though it names one of them. Replaying several
+        // panes' histories can outlast a client's wait for the layout to stop
+        // moving, so a page that learned the zoom last would settle on the grid,
+        // size every PTY to a cell, and then resize them all again — two SIGWINCH
+        // repaints per client, the cost `Created` carrying its pane's size exists
+        // to avoid.
+        //
+        // Safe in this order: a zoom naming a pane not delivered yet does not
+        // apply until that pane arrives. Sent only when something is zoomed —
+        // nothing zoomed is where a client starts.
+        let zoomed = if replaying {
+            state.zoomed.and_then(|pane| {
+                serde_json::to_string(&ServerMessage::Zoomed { pane: Some(pane) }).ok()
+            })
+        } else {
+            None
+        };
+        let panes: Vec<PaneReplay> = if replaying {
+            state
+                .panes
+                .iter()
+                .map(|pane| {
+                    // The shape of what was replayed, so a client that reports an
+                    // incomplete screen can be told apart from a record that was
+                    // already missing it — the record is gone by the time anyone
+                    // asks.
+                    tracing::info!(
+                        client = id,
+                        pane = pane.id,
+                        alt = pane.modes.alt_screen,
+                        ring = pane.scrollback.len(),
+                        covered = pane.covered,
+                        normal_screen = pane.normal_screen.len(),
+                        screen = pane.screen.len(),
+                        since = pane.since.len(),
+                        rows = pane.rows,
+                        cols = pane.cols,
+                        "viewer: replaying a pane's record"
+                    );
+                    PaneReplay::capture(pane)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        // Each pane's standing recovery report, for the reason the screens are
+        // replayed: it was broadcast once, this client was not there, and the
+        // plugin will not repeat it. Without this the chip — and its cancel — is
+        // simply missing from every screen that attaches mid-recovery.
+        let recovery: Vec<String> = if replaying {
+            state
+                .recovery
+                .iter()
+                .filter_map(|(pane, report)| {
+                    serde_json::to_string(&ServerMessage::Recovery {
+                        pane: *pane,
+                        state: report.state.clone(),
+                        detail: report.detail.clone(),
+                        deadline_epoch: report.deadline_epoch,
+                        attempt: report.attempt,
+                    })
+                    .ok()
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        // Registered with the replay gate closed before the lock is released:
+        // anything the worker broadcasts from now on waits for the replay instead
+        // of overtaking it.
+        state.clients.push(Client {
+            id,
+            tx: tx.clone(),
+            replay_held: Some(Vec::new()),
+            socket,
+            connection: None,
+        });
+        // Registered but not yet reachable by a session: from here until the
+        // return below, an unwind has to take the record with it.
+        let mut registered = RegistrationGuard::new(self, id);
+        drop(state);
+
+        // Off the lock: framing a whole replay copies its bytes into frames, and
+        // holding the lock for that stalled the record-and-broadcast of every pane
+        // in the repository.
+        #[cfg(test)]
+        self.run_concurrency_test_hook(super::ConcurrencyTestPoint::ReplayFraming);
+        let mut replay_queue = ReplayQueue::new(&tx);
+        if let Some(json) = hello {
             replay_queue.send(TerminalFrame::Control(json));
         }
-        if replaying {
-            // Ahead of the panes, though it names one of them. Replaying
-            // several panes' histories can outlast a client's wait for the
-            // layout to stop moving, so a page that learned the zoom last
-            // would settle on the grid, size every PTY to a cell, and then
-            // resize them all again — two SIGWINCH repaints per client, the
-            // cost `Created` carrying its pane's size exists to avoid.
-            //
-            // Safe in this order: a zoom naming a pane not delivered yet does
-            // not apply until that pane arrives. Sent only when something is
-            // zoomed — nothing zoomed is where a client starts.
-            if let Some(pane) = state.zoomed
-                && let Ok(json) = serde_json::to_string(&ServerMessage::Zoomed { pane: Some(pane) })
-            {
-                replay_queue.send(TerminalFrame::Control(json));
-            }
-            for pane in &state.panes {
-                // The shape of what was replayed, so a client that reports an
-                // incomplete screen can be told apart from a record that was
-                // already missing it — the record is gone by the time anyone
-                // asks.
-                tracing::info!(
+        if let Some(json) = zoomed {
+            replay_queue.send(TerminalFrame::Control(json));
+        }
+        for pane in &panes {
+            if !replay_pane(&mut replay_queue, pane) {
+                // The queue is this client's own and empty until now, and a
+                // whole replay of the largest panes allowed fits it — so this
+                // is a broken assumption, not a busy moment.
+                tracing::warn!(
+                    pane = pane.pane,
                     client = id,
-                    pane = pane.id,
-                    alt = pane.modes.alt_screen,
-                    ring = pane.scrollback.len(),
-                    covered = pane.covered,
-                    normal_screen = pane.normal_screen.len(),
-                    screen = pane.screen.len(),
-                    since = pane.since.len(),
-                    rows = pane.rows,
-                    cols = pane.cols,
-                    "viewer: replaying a pane's record"
+                    "viewer: a pane's screen did not fit the replay queue"
                 );
-                if !replay_pane(&mut replay_queue, pane) {
-                    // The queue is this client's own and empty until now, and
-                    // a whole replay of the largest panes allowed fits it —
-                    // so this is a broken assumption, not a busy moment.
-                    tracing::warn!(
-                        pane = pane.id,
-                        client = id,
-                        "viewer: a pane's screen did not fit the replay queue"
-                    );
-                }
             }
-            // Each pane's standing recovery report, for the reason the screens
-            // are replayed: it was broadcast once, this client was not there,
-            // and the plugin will not repeat it. Without this the chip — and
-            // its cancel — is simply missing from every screen that attaches
-            // mid-recovery.
-            for (pane, report) in &state.recovery {
-                if let Ok(json) = serde_json::to_string(&ServerMessage::Recovery {
-                    pane: *pane,
-                    state: report.state.clone(),
-                    detail: report.detail.clone(),
-                    deadline_epoch: report.deadline_epoch,
-                    attempt: report.attempt,
-                }) {
-                    let _ = tx.try_send(TerminalFrame::Control(json));
-                }
-            }
+        }
+        for json in recovery {
+            let _ = tx.try_send(TerminalFrame::Control(json));
         }
         let replay_complete = serde_json::to_string(&ServerMessage::ReplayComplete)
             .expect("replay-complete control serializes");
         tx.try_send(TerminalFrame::Control(replay_complete))
             .expect("initial replay reserved a queue slot for its completion marker");
+
+        let mut state = self.state.lock().expect("terminal state poisoned");
         // Registered with the session while the hub's lock is still held, so a
         // resize cannot reach `resize_pane` before this connection is known to
         // the ownership it is about to be judged against.
@@ -126,16 +177,26 @@ impl TerminalHub {
         // After the replay above: the sizing verdict rides the same queue as the
         // pane history, and a client that learned it owned the sizing before it
         // knew there were panes would have nothing to fit.
-        let registration = self
-            .ownership
-            .join(viewer, arriving, tx.clone(), Instant::now());
+        let registration = self.ownership.join(viewer, arriving, tx, Instant::now());
         let connection = registration.connection;
-        state.clients.push(Client {
-            id,
-            tx,
-            connection,
-            socket,
-        });
+        registered.registered(connection);
+        if let Some(index) = state.clients.iter().position(|client| client.id == id) {
+            state.clients[index].connection = Some(connection);
+            // Everything the worker produced while the replay was being framed,
+            // in the order it produced it. A client whose queue cannot take it is
+            // already too far behind and is cut off rather than handed a gap.
+            let held = state.clients[index].replay_held.take().unwrap_or_default();
+            let mut kept = true;
+            for frame in held {
+                if !queue_locked(&mut state.clients[index], frame) {
+                    kept = false;
+                    break;
+                }
+            }
+            if !kept {
+                state.clients.remove(index);
+            }
+        }
         drop(state);
 
         // Offer the startup terminals to be sized rather than spawning them
@@ -157,6 +218,7 @@ impl TerminalHub {
             );
         }
 
+        registered.disarm();
         TerminalSession {
             hub: Arc::clone(self),
             id,
@@ -174,12 +236,8 @@ impl TerminalHub {
         };
         let mut state = self.state.lock().expect("terminal state poisoned");
         if let Some(index) = state.clients.iter().position(|c| c.id == client_id)
-            && state.clients[index]
-                .tx
-                .try_send(TerminalFrame::Control(json))
-                .is_err()
+            && !queue_locked(&mut state.clients[index], TerminalFrame::Control(json))
         {
-            state.clients[index].cut_off();
             state.clients.remove(index);
         }
     }

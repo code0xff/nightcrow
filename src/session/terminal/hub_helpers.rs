@@ -1,3 +1,4 @@
+use super::TerminalHub;
 use super::frame::TerminalFrame;
 use crate::backend::PaneId;
 use crate::runtime::emulator::PaneModes;
@@ -6,6 +7,20 @@ use std::collections::VecDeque;
 use std::sync::mpsc::TrySendError;
 
 use super::session::Client;
+
+impl TerminalHub {
+    /// Queue `command` for the worker and wake it to take it.
+    ///
+    /// Never blocks: the worker also writes to PTY masters, so a blocking send
+    /// here could wedge the connection thread that made the request.
+    pub(super) fn submit(&self, command: Command) -> Result<(), TrySendError<Command>> {
+        let queued = self.commands.try_send(command);
+        if queued.is_ok() {
+            self.wake.wake();
+        }
+        queued
+    }
+}
 
 pub enum Command {
     /// `command` is `Some` only for startup panes (run via `$SHELL -lc`);
@@ -130,8 +145,12 @@ pub(super) struct PaneState {
     /// what every other client has seen.
     ///
     /// **Never dropped, only superseded.** Terminal bytes cannot be skipped, so
-    /// outgrowing [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`] forces a fresh
-    /// snapshot (which empties this) rather than evicting from the front.
+    /// outgrowing [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`] asks for a fresh
+    /// snapshot (which empties this) rather than evicting from the front. A torn
+    /// stream defers that snapshot to the desperate path at about twice the
+    /// limit plus one chunk, and an open synchronized update defers it to the
+    /// parser's buffer limit or update timeout; see the replay section of
+    /// [`docs/architecture/session.md`](../../../../docs/architecture/session.md).
     pub(super) since: VecDeque<u8>,
     /// The size the PTY is currently set to, so a connecting client can skip a
     /// resize that would change nothing.
@@ -153,9 +172,10 @@ pub(super) struct RecoveryReport {
     pub(super) attempt: u32,
 }
 
-/// Hub state shared between the worker thread and connection threads. Held
-/// under one mutex so a connecting client's replay is atomic with the worker's
-/// append-and-broadcast.
+/// Hub state shared between the worker thread and connection threads. Held under
+/// one mutex so a connecting client's snapshot is atomic with the worker's
+/// append-and-broadcast; the replay itself is framed afterwards, from that
+/// snapshot, with broadcasts for the connecting client held until it is queued.
 pub struct Shared {
     pub(super) clients: Vec<Client>,
     pub(super) panes: Vec<PaneState>,
@@ -178,7 +198,23 @@ pub struct Shared {
 /// outright (see [`Client::cut_off`]). Operates on an already-locked client list
 /// so the caller can pair it with a pane mutation atomically.
 pub(super) fn broadcast_locked(clients: &mut Vec<Client>, frame: TerminalFrame) {
-    clients.retain(|client| match client.tx.try_send(frame.clone()) {
+    clients.retain_mut(|client| queue_locked(client, frame.clone()));
+}
+
+/// Queue a frame for one client under the state lock, holding it behind a replay
+/// that is still being framed. Reports whether the client can still be kept: a
+/// full queue (or a full replay gate) cuts it off, and a closed channel means its
+/// session is already gone.
+pub(super) fn queue_locked(client: &mut Client, frame: TerminalFrame) -> bool {
+    let result = match &mut client.replay_held {
+        Some(held) if held.len() < super::CLIENT_QUEUE_DEPTH => {
+            held.push(frame);
+            Ok(())
+        }
+        Some(_) => Err(TrySendError::Full(frame)),
+        None => client.tx.try_send(frame),
+    };
+    match result {
         Ok(()) => true,
         Err(TrySendError::Full(_)) => {
             // WARN, not DEBUG: the default log level must be able to say why a
@@ -189,7 +225,7 @@ pub(super) fn broadcast_locked(clients: &mut Vec<Client>, frame: TerminalFrame) 
         }
         // Already gone: its session dropped, which is what closed the receiver.
         Err(TrySendError::Disconnected(_)) => false,
-    });
+    }
 }
 
 /// The canonical pane order for a reorder request: the requested ids that are

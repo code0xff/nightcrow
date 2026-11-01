@@ -1,6 +1,7 @@
 use crate::backend::PaneId;
 use crate::session::limits;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// A control message from a client. Output travels as binary frames to avoid
 /// JSON escaping or base64 expansion. Serialized as well as deserialized so the
@@ -144,9 +145,9 @@ pub enum ServerMessage {
     Hello {
         client: u64,
         /// How many `Created` frames the replay is about to deliver. Exact,
-        /// because `connect` queues the whole replay under the hub's lock and
-        /// only registers the client afterwards — a client that knows the
-        /// count can lay its grid out for the panes it is *going* to have.
+        /// because `connect` snapshots the pane set under the hub's lock — a
+        /// client that knows the count can lay its grid out for the panes it is
+        /// *going* to have.
         panes: usize,
     },
     /// The initial connection replay has ended. Queued after `Hello`, zoom,
@@ -226,7 +227,11 @@ pub enum ServerMessage {
 pub enum TerminalFrame {
     /// Raw PTY bytes for `pane`. Sent as a binary WebSocket frame with the
     /// pane id prefixed, so one socket multiplexes every terminal losslessly.
-    Output { pane: PaneId, data: Vec<u8> },
+    ///
+    /// Shared rather than owned: one broadcast reaches every connected client,
+    /// and giving each its own copy made the payload the largest per-client
+    /// allocation on this path.
+    Output { pane: PaneId, data: Arc<[u8]> },
     /// A JSON control frame.
     Control(String),
 }

@@ -40,7 +40,7 @@ impl App {
             self.build_tree_index();
             self.git.view.tree.recompute_filter();
         }
-        let rows = self.git.view.tree.visible_rows();
+        let rows = self.git.view.tree.rows();
         if let Some(idx) = prev_path
             .as_deref()
             .and_then(|p| rows.iter().position(|r| r.path == p))
@@ -61,15 +61,16 @@ impl App {
     // is a no-op for a listing still in the cache.
     pub(crate) fn refresh_tree_cache_scoped(&mut self, invalidate: Option<&BTreeSet<String>>) {
         match invalidate {
-            None => self.git.view.tree.cache.clear(),
+            None => self.git.view.tree.cache_mut().clear(),
             Some(dirs) => {
+                let cache = self.git.view.tree.cache_mut();
                 for dir in dirs {
-                    self.git.view.tree.cache.remove(dir);
+                    cache.remove(dir);
                 }
             }
         }
         self.ensure_tree_root();
-        let mut dirs: Vec<String> = self.git.view.tree.expanded.iter().cloned().collect();
+        let mut dirs: Vec<String> = self.git.view.tree.expanded().iter().cloned().collect();
         dirs.sort_by_key(|p| p.matches('/').count());
         let mut kept = BTreeSet::new();
         for dir in dirs {
@@ -79,7 +80,7 @@ impl App {
                 .git
                 .view
                 .tree
-                .cache
+                .cache()
                 .get(parent)
                 .is_some_and(|children| children.iter().any(|e| e.is_dir && e.name == name));
             if still_a_dir {
@@ -87,7 +88,7 @@ impl App {
                 kept.insert(dir);
             }
         }
-        self.git.view.tree.expanded = kept;
+        self.git.view.tree.set_expanded(kept);
         self.git.view.tree.row_width_cache.set(None);
         self.sync_tree_watches();
     }
@@ -99,9 +100,9 @@ impl App {
         // A filename search matches the whole tree, not just what is expanded,
         // so a file created in a collapsed directory must produce an event.
         let mut desired: BTreeSet<String> = if self.git.view.tree.search_active {
-            self.git.view.tree.cache.keys().cloned().collect()
+            self.git.view.tree.cache().keys().cloned().collect()
         } else {
-            self.git.view.tree.expanded.iter().cloned().collect()
+            self.git.view.tree.expanded().iter().cloned().collect()
         };
         // Root is always watched so top-level creations/removals are caught
         // even with nothing expanded.
@@ -170,7 +171,7 @@ impl App {
     // A read error caches an empty listing and surfaces the message so a
     // single unreadable directory can't wedge navigation.
     pub(crate) fn ensure_tree_children(&mut self, dir: &str) {
-        if self.git.view.tree.cache.contains_key(dir) {
+        if self.git.view.tree.cache().contains_key(dir) {
             return;
         }
         let respect = self.git.tree_config.respect_gitignore;
@@ -186,21 +187,29 @@ impl App {
                 // A successful read resolves whatever the last failing one
                 // reported; without this the tree error outlived its cause.
                 self.clear_notice(NoticeKind::Tree);
-                self.git.view.tree.cache.insert(dir.to_string(), children);
+                self.git
+                    .view
+                    .tree
+                    .cache_mut()
+                    .insert(dir.to_string(), children);
             }
             Err(e) => {
                 tracing::warn!(error = %e, dir = %dir, "failed to read tree directory");
                 self.raise_notice(NoticeKind::Tree, e.to_string());
                 // Cache empty so we don't retry the failing read on every
                 // keystroke; a repo change / refresh clears the cache.
-                self.git.view.tree.cache.insert(dir.to_string(), Vec::new());
+                self.git
+                    .view
+                    .tree
+                    .cache_mut()
+                    .insert(dir.to_string(), Vec::new());
             }
         }
     }
 
     pub(crate) fn preview_tree_selected(&mut self) {
         let selected = self.git.view.tree.selected;
-        let row = self.git.view.tree.visible_rows().into_iter().nth(selected);
+        let row = self.git.view.tree.rows().get(selected).cloned();
         match row {
             Some(row) if !row.is_dir => {
                 let key = FileViewKey::Status(row.path);

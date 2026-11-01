@@ -54,9 +54,7 @@ impl TerminalHub {
     ///
     /// Reports whether the worker took it.
     pub(crate) fn reload_plugins(&self, plugins: Vec<PluginConfig>) -> bool {
-        self.commands
-            .try_send(Command::ReloadPlugins { plugins })
-            .is_ok()
+        self.submit(Command::ReloadPlugins { plugins }).is_ok()
     }
 
     /// Carry out a queued reload on the worker thread. The pane titles are read

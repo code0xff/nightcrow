@@ -156,6 +156,64 @@ describe("terminal replay messages", () => {
   });
 });
 
+describe("reconnect replay", () => {
+  it("replaces a kept pane list with the replay's order and prunes what it left out", () => {
+    const context = makeContext();
+    let panes = [9, 7];
+    let active: number | null = 9;
+    let titles: Record<number, string> = { 7: "shell", 9: "gone" };
+    const setZoomed = vi.fn();
+    context.setPanes = (next) => {
+      panes = typeof next === "function" ? next(panes) : next;
+    };
+    context.setActive = (next) => {
+      active = typeof next === "function" ? next(active) : next;
+    };
+    context.setTitles = (next) => {
+      titles = typeof next === "function" ? next(titles) : next;
+    };
+    context.setZoomed = setZoomed;
+
+    control(context, { type: "hello", client: 1, panes: 2 });
+    control(context, { type: "created", pane: 8, rows: 24, cols: 80, title: "vim" });
+    control(context, { type: "created", pane: 7, rows: 24, cols: 80 });
+    // The pane that was already on screen is not appended twice; the new one is.
+    expect(panes).toEqual([9, 7, 8]);
+
+    control(context, { type: "replay_complete" });
+
+    expect(panes).toEqual([8, 7]);
+    expect(active).toBeNull();
+    expect(titles).toEqual({ 7: "shell", 8: "vim" });
+    // The replay did not announce a zoom, so an old one no longer applies.
+    expect(setZoomed).toHaveBeenCalledWith(null);
+  });
+
+  it("gives a kept emulator the grid the replay reports before its screen arrives", () => {
+    const context = makeContext();
+    const term = addView(context, 7, []);
+    const resize = vi.spyOn(term, "resize");
+
+    control(context, { type: "hello", client: 1, panes: 1 });
+    control(context, { type: "created", pane: 7, rows: 30, cols: 100 });
+
+    expect(resize).toHaveBeenCalledWith(100, 30);
+  });
+
+  it("keeps a zoom the replay announced", () => {
+    const context = makeContext();
+    const setZoomed = vi.fn();
+    context.setZoomed = setZoomed;
+
+    control(context, { type: "hello", client: 1, panes: 1 });
+    control(context, { type: "zoomed", pane: 8 });
+    control(context, { type: "created", pane: 8, rows: 24, cols: 80 });
+    control(context, { type: "replay_complete" });
+
+    expect(setZoomed).not.toHaveBeenCalledWith(null);
+  });
+});
+
 describe("attention messages", () => {
   it("says what the pane asked, or a plain line when it said nothing", () => {
     const info = vi.spyOn(toast, "info").mockImplementation(() => 0);

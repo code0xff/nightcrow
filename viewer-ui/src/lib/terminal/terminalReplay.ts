@@ -1,9 +1,17 @@
 import type { Terminal } from "@xterm/xterm";
 import { OSC_CLIPBOARD } from "./osc52";
+import { queueTerminalBarrier } from "./terminalWrites";
 
 export interface TerminalReplayState {
   active: boolean;
   panes: Map<number, symbol>;
+  /** Panes as the replay announced them, in its order. A replay is the
+   *  canonical pane list and order for the connection it belongs to. */
+  order: number[];
+  /** Whether this replay announced a zoom. The server sends `zoomed` only
+   *  while a pane fills the panel, so a replay without it means none does —
+   *  including for a page that reconnects holding an outdated one. */
+  zoomed: boolean;
 }
 
 export type PendingTerminalWrite =
@@ -20,7 +28,10 @@ export function queueReplayEnd(
   gate: ReplayReplyGate,
   onSettled: () => void,
 ): void {
-  term.write("", () => {
+  // Queued through the pane's write backlog: the boundary is only meaningful
+  // once every replay byte before it has been parsed, including frames still
+  // waiting there for xterm to catch up.
+  queueTerminalBarrier(term, () => {
     gate.release();
     onSettled();
   });
@@ -74,5 +85,5 @@ export function installReplayReplyGate(
 }
 
 export function createTerminalReplayState(): TerminalReplayState {
-  return { active: false, panes: new Map() };
+  return { active: false, panes: new Map(), order: [], zoomed: false };
 }
