@@ -215,18 +215,12 @@ fn replay_chunks_are_cut_where_the_contract_cuts_them() {
 }
 
 /// The cut exists for the socket: `write_frame` refuses a payload over
-/// [`MAX_FRAME_BYTES`], and an alternate-screen pane's screen grows with its area. Pin
-/// the two sizes to each other, and put a full chunk through the writer that would
-/// reject it — a chunk size that walked past the ceiling on its own would make every
-/// reattach of a large pane fatal.
+/// [`MAX_FRAME_BYTES`], and an alternate-screen pane's screen grows with its area. The
+/// two constants are held to each other where they are defined, so every build checks
+/// that; this puts a full chunk through the writer that would reject it, proving the
+/// encoder accepts the size the replay actually cuts to.
 #[test]
 fn a_replay_chunk_is_a_frame_the_daemon_socket_still_accepts() {
-    const {
-        assert!(
-            REPLAY_CHUNK_BYTES <= MAX_FRAME_BYTES,
-            "a replay chunk must fit the daemon's frame limit"
-        );
-    }
     let mut written = Vec::new();
     write_frame(
         &mut written,
@@ -237,6 +231,10 @@ fn a_replay_chunk_is_a_frame_the_daemon_socket_still_accepts() {
         written.len(),
         REPLAY_CHUNK_BYTES + 5,
         "the frame is the chunk plus its kind byte and length prefix"
+    );
+    assert!(
+        written.len() - 5 <= MAX_FRAME_BYTES,
+        "the encoded chunk must stay inside the daemon's payload limit"
     );
 }
 

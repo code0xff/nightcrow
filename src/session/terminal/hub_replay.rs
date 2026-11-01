@@ -59,6 +59,15 @@ const LEAVE_ALT_SCREEN: &[u8] = b"\x1b[?1049l";
 /// it. The completion marker has one additional reserved slot in the channel.
 pub(super) const REPLAY_CHUNK_BYTES: usize = 1024 * 1024;
 
+// A chunk larger than the frame limit could not be written at all: the daemon refuses
+// such a payload and the replay would end the attach connection rather than arrive.
+// Checked here rather than in the tests so every build, not just the suite, holds the
+// two constants to each other.
+const _: () = assert!(
+    REPLAY_CHUNK_BYTES <= crate::daemon::frame::MAX_FRAME_BYTES,
+    "a replay chunk must fit the daemon's frame limit"
+);
+
 /// Queue `chunks` for `pane`, reporting whether all of them fit. Stops at the
 /// first frame the queue refuses: what follows would not fit either, and a replay
 /// missing a piece in the middle is a screen the client cannot repair.
