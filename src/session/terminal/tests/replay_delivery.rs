@@ -107,3 +107,35 @@ fn the_announcement_precedes_every_byte_of_the_replay() {
         "nothing may be interleaved between the replay's bytes"
     );
 }
+
+/// A queue with no room left ends the replay rather than skipping the frame and carrying
+/// on: a client handed a gap in the middle of a record gets a screen it cannot repair,
+/// so the replay reports that it did not fit and what was queued is a prefix of it.
+#[test]
+fn a_refused_frame_ends_the_replay_instead_of_skipping_ahead() {
+    let (tx, rx): (mpsc::SyncSender<TerminalFrame>, _) = mpsc::sync_channel(2);
+    let replay = PaneReplay::capture(&an_alternate_screen_pane());
+    let mut queue = ReplayQueue::new(&tx);
+    assert!(
+        !replay_pane(&mut queue, &replay),
+        "a replay that cannot fit must report that it did not"
+    );
+
+    let frames: Vec<TerminalFrame> = rx.try_iter().collect();
+    assert_eq!(
+        frames.len(),
+        2,
+        "the queue must hold the announcement and one part, and nothing may be skipped into it"
+    );
+    let TerminalFrame::Control(created) = &frames[0] else {
+        panic!("the replay must open by announcing its pane");
+    };
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(created).expect("control JSON")["type"],
+        "created"
+    );
+    assert!(
+        matches!(&frames[1], TerminalFrame::Output { .. }),
+        "the part that fit follows the announcement, in the contract's order"
+    );
+}
