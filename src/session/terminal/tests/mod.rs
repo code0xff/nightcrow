@@ -21,6 +21,7 @@ mod recovery_replay;
 mod replay_complete;
 mod replay_fidelity;
 mod replay_locking;
+mod replay_record;
 mod replay_registration;
 mod replay_window;
 mod ring;

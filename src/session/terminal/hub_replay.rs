@@ -127,6 +127,14 @@ impl PaneReplay {
             record,
         }
     }
+
+    /// The captured parts, in the order [`replay_pane`] queues them: the normal
+    /// screen under an alternate-screen program, the mode prelude, and the
+    /// record. For tests that compare bytes rather than the screen they draw.
+    #[cfg(test)]
+    pub(super) fn parts(&self) -> [&[Arc<[u8]>]; 3] {
+        [&self.normal_under, &self.prelude, &self.record]
+    }
 }
 
 /// Announce a captured pane to an attaching client and put its screen in front
