@@ -6,7 +6,7 @@ mod split;
 mod tests;
 
 pub(crate) use highlight::highlight_line_segments;
-pub use highlight::{DIFF_THEME, HighlightSegment};
+pub use highlight::{DIFF_THEME, HIGHLIGHT_LINE_CAP, HighlightSegment};
 pub use search::DiffSearch;
 pub(crate) use search::nearest_match_index;
 pub(crate) use split::{flush_split_blocks, resolve_syntax_extension};
@@ -46,8 +46,9 @@ pub struct DiffPane {
     /// render/search indexes observe one generation boundary.
     hunks: Vec<DiffHunk>,
     /// Lowercased copy of each `DiffLine::content` aligned with `hunks`,
-    /// built once per diff load so per-keystroke search does not
-    /// re-lowercase.
+    /// built on demand by `ensure_lower_cache`: a load without an active
+    /// search skips the lowercase pass, and per-keystroke search only pays it
+    /// once per generation.
     pub(crate) hunks_lines_lower: Vec<Vec<String>>,
     /// Cached syntect highlight output per body line. Built once when hunks
     /// (or the active syntax) change so the renderer skips the full-document

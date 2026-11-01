@@ -1,7 +1,7 @@
 use crate::git::diff::LineKind;
 use crate::ui::diff_pane::{
-    DIFF_THEME, DiffPane, DiffPaneView, HighlightSegment, highlight_line_segments,
-    nearest_match_index, resolve_syntax_extension,
+    DIFF_THEME, DiffPane, DiffPaneView, HIGHLIGHT_LINE_CAP, HighlightSegment,
+    highlight_line_segments, nearest_match_index, resolve_syntax_extension,
 };
 
 impl DiffPane {
@@ -172,6 +172,11 @@ impl DiffPane {
     /// different types, and a single syntax would render everything as the
     /// first file's language. The generation check is the frame hot path; the
     /// full syntax/highlight walk happens only after `set_hunks`.
+    ///
+    /// Only the first [`HIGHLIGHT_LINE_CAP`] body lines are highlighted. A
+    /// hunk past the cap gets no entry and a hunk straddling it keeps only its
+    /// in-budget prefix, so the renderers' `(hunk, line)` cache lookup falls
+    /// back to plain text for everything beyond.
     pub fn ensure_highlight_cache(
         &mut self,
         ss: &syntect::parsing::SyntaxSet,
@@ -180,12 +185,6 @@ impl DiffPane {
         if self.highlight_cache_generation == Some(self.generation) {
             return;
         }
-
-        let per_hunk_syntax: Vec<&syntect::parsing::SyntaxReference> = self
-            .syntax_shape
-            .iter()
-            .map(|extension| resolve_syntax_extension(ss, extension.as_deref()))
-            .collect();
 
         use syntect::easy::HighlightLines;
         let theme = &ts.themes[DIFF_THEME];
@@ -196,7 +195,12 @@ impl DiffPane {
         let mut current_syntax_name = String::new();
 
         let mut out: Vec<Vec<Vec<HighlightSegment>>> = Vec::with_capacity(self.hunks.len());
-        for (hunk, syntax) in self.hunks.iter().zip(per_hunk_syntax.iter()) {
+        let mut remaining = HIGHLIGHT_LINE_CAP;
+        for (hunk, extension) in self.hunks.iter().zip(self.syntax_shape.iter()) {
+            if remaining == 0 {
+                break;
+            }
+            let syntax = resolve_syntax_extension(ss, extension.as_deref());
             if hl_pair.is_none() || current_syntax_name != syntax.name {
                 hl_pair = Some((
                     HighlightLines::new(syntax, theme),
@@ -207,14 +211,16 @@ impl DiffPane {
             // Safe: just assigned above when None.
             let (hl_new, hl_old) = hl_pair.as_mut().unwrap();
 
-            let mut per_hunk: Vec<Vec<HighlightSegment>> = Vec::with_capacity(hunk.lines.len());
-            for line in &hunk.lines {
+            let take = hunk.lines.len().min(remaining);
+            let mut per_hunk: Vec<Vec<HighlightSegment>> = Vec::with_capacity(take);
+            for line in hunk.lines.iter().take(take) {
                 let hl = match line.kind {
                     LineKind::Removed => &mut *hl_old,
                     _ => &mut *hl_new,
                 };
                 per_hunk.push(highlight_line_segments(hl, ss, &line.content));
             }
+            remaining -= take;
             out.push(per_hunk);
         }
         self.line_highlights = out;

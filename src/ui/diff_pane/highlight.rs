@@ -1,6 +1,13 @@
 /// Syntect theme name used for both the diff and file-view highlight caches.
 pub const DIFF_THEME: &str = "base16-ocean.dark";
 
+/// Leading body lines highlighted per loaded diff or file overlay. Past this,
+/// renderers fall back to plain text: a large or constantly appended file would
+/// otherwise spend a full syntect pass on the UI thread every time its
+/// generation changes. Diff add/remove backgrounds come from the line kind, so
+/// they still apply past the cap.
+pub const HIGHLIGHT_LINE_CAP: usize = 4000;
+
 /// One highlighted segment of a body line: foreground RGB + the text, cached
 /// so per-frame rendering does not re-run the syntect highlighter.
 #[derive(Debug, Clone)]

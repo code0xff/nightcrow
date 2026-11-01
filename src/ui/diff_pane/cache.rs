@@ -21,7 +21,9 @@ impl DiffPane {
         self.max_line_number = 0;
 
         self.hunks_lines_lower.clear();
-        self.hunks_lines_lower.reserve(self.hunks.len());
+        // Built on demand by `ensure_lower_cache`, so a load without an active
+        // search never lowercases the diff.
+        self.lower_cache_generation = None;
         self.hunk_starts.clear();
         self.hunk_starts.reserve(self.hunks.len());
         self.syntax_shape.clear();
@@ -38,7 +40,6 @@ impl DiffPane {
                     .map(str::to_owned),
             );
 
-            let mut lines_lower = Vec::with_capacity(hunk.lines.len());
             for line in &hunk.lines {
                 if let Some(old) = line.old_lineno {
                     self.max_line_number = self.max_line_number.max(old);
@@ -46,11 +47,8 @@ impl DiffPane {
                 if let Some(new) = line.new_lineno {
                     self.max_line_number = self.max_line_number.max(new);
                 }
-                lines_lower.push(line.content.to_lowercase());
             }
-            self.hunks_lines_lower.push(lines_lower);
         }
-        self.lower_cache_generation = Some(self.generation);
 
         self.split_rows.clear();
         let mut removed = Vec::new();

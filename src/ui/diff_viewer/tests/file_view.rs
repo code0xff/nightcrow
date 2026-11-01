@@ -9,8 +9,11 @@ fn file_view_line_numbers_stay_put_when_the_body_scrolls_sideways() {
     app.git.view.diff.view = DiffPaneView::File;
     app.git.view.diff.file_view.key =
         Some(crate::app::FileViewKey::Status("src/lib.rs".to_string()));
-    app.git.view.diff.file_view.content =
-        "fn first() { let a_long_identifier = 1; }\nfn second() {}\n".to_string();
+    app.git
+        .view
+        .diff
+        .file_view
+        .set_content("fn first() { let a_long_identifier = 1; }\nfn second() {}\n".to_string());
 
     let unscrolled = drawn_file_view(&mut app, 60, 8, 0);
     let scrolled = drawn_file_view(&mut app, 60, 8, 12);

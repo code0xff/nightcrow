@@ -20,6 +20,8 @@ Paths used only as commit objects or Git pathspecs go through `validate_commit_p
 
 Wrap mode cannot be combined with horizontal scrolling and resets `scroll_x` to zero when enabled. In wrap mode the gutter is included in the body; split mode ignores wrap to preserve old/new row alignment. Vertical scroll and search indexes use logical lines. `DiffPaneView` cycles through `Diff → Split → File`, skipping File when the selected file cannot be opened.
 
+Syntax highlighting runs synchronously on the UI thread, so both the diff pane and the file overlay highlight only the leading `HIGHLIGHT_LINE_CAP` body lines of the current generation. A hunk past the cap has no cached entry and a hunk that straddles it keeps only its in-budget prefix; the renderers emit plain text for the rest while keeping the add/remove background derived from the line kind. Search and the split layout still cover every line because they read the full hunk and search indexes, not the highlight cache, and the file overlay keeps per-line byte offsets so its unhighlighted tail can be rendered without rescanning the content. The lowercased search cache is also built on demand by `ensure_lower_cache`: a load without an active query skips the lowercase pass, and a search pays it once per generation.
+
 ## Status, tree, and log state
 
 - `StatusView::filter_cache` is recomputed only when the query or file list changes. The staged and worktree columns in status use one `StatusKind`; rename keeps the effective new-side `path` separate from the display-only `old_path`. Sorting is deterministic, and typechange/conflict are not collapsed into modified.
