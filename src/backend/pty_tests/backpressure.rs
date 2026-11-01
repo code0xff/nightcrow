@@ -59,7 +59,11 @@ fn real_pty_destroy_while_output_channel_is_full_finishes() {
         "real PTY reader did not block on its full output queue"
     );
 
-    let mut killer = backend.panes[&pane].killer.clone_killer();
+    let mut killer = backend.panes[&pane]
+        .killer
+        .as_ref()
+        .expect("a live pane keeps its killer")
+        .clone_killer();
     let (done_tx, done_rx) = mpsc::channel();
     let destroyer = thread::spawn(move || {
         backend.destroy_pane(pane);

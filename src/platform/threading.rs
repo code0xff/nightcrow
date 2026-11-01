@@ -1,5 +1,6 @@
 //! Bounded thread-reaping helpers.
 
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -30,3 +31,37 @@ pub fn try_timed_join(handle: JoinHandle<()>, timeout: Duration) {
         drop(handle);
     }
 }
+
+/// Run `job` on its own detached thread.
+///
+/// For a caller that has work which waits — a `Drop` that still has to kill a
+/// process tree and give worker threads their reap window — but must not spend
+/// that wait itself. Nothing joins the thread: the job owns everything it needs
+/// until it is done.
+///
+/// A failed spawn runs the job on the caller instead. The alternative would drop
+/// it, which for teardown means leaking a process tree precisely when the system
+/// is already short of resources.
+pub fn spawn_reaper(name: &str, job: impl FnOnce() + Send + 'static) {
+    let pending = Arc::new(Mutex::new(Some(job)));
+    let worker = Arc::clone(&pending);
+    let spawned = thread::Builder::new()
+        .name(name.to_string())
+        .spawn(move || {
+            let job = worker.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if let Some(job) = job {
+                job();
+            }
+        });
+    if let Err(error) = spawned {
+        tracing::warn!(%error, "could not start {name}; doing its work on this thread");
+        let job = pending.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Some(job) = job {
+            job();
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "threading_tests.rs"]
+mod tests;
