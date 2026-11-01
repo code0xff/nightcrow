@@ -237,3 +237,44 @@ fn a_gate_that_overflows_during_the_window_cuts_the_client_off() {
     );
     hub.stop();
 }
+
+/// The window holds exactly as many frames as the client's own queue: the depth is what
+/// bounds it, not one frame less and not one more. Fill it and the client stays; add the
+/// frame that cannot be held and it is cut off. A gate that closed a frame early would
+/// disconnect a client that was never behind.
+#[test]
+fn the_gate_holds_exactly_the_client_queue_depth() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub =
+        spawn_hub_with_auto_open(&dir.path().to_string_lossy(), Vec::new(), Vec::new(), false);
+
+    let (reached, resume) = pause_at_framing(&hub);
+    let connecting = {
+        let hub = Arc::clone(&hub);
+        thread::spawn(move || attach(&hub))
+    };
+    reached
+        .recv_timeout(HOOK_DEADLINE)
+        .expect("connect never reached the framing stage");
+
+    for _ in 0..CLIENT_QUEUE_DEPTH {
+        hub.record_and_broadcast(0, b"x".to_vec(), observed(), None);
+    }
+    assert_eq!(
+        hub.client_count(),
+        1,
+        "a gate holding its full depth is not an overflowing one"
+    );
+
+    hub.record_and_broadcast(0, b"x".to_vec(), observed(), None);
+    assert_eq!(
+        hub.client_count(),
+        0,
+        "the frame past the depth must cut the client off"
+    );
+
+    resume.send(()).unwrap();
+    let session = connecting.join().expect("the connect thread panicked");
+    drop(session);
+    hub.stop();
+}
