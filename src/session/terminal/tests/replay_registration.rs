@@ -2,14 +2,17 @@
 //! session: what it has to take with it. `connect` spans the whole replay between
 //! those two moments, so the undo cannot live in a session that never exists.
 
+use super::{attach, spawn_hub_with_auto_open};
 use crate::config::ShellConfig;
 use crate::session::size_owner::{RELEASE_GRACE, SizeOwnership, ViewerId};
 use crate::session::terminal::frame::TerminalFrame;
 use crate::session::terminal::hub_connect_guard::RegistrationGuard;
 use crate::session::terminal::session::Client;
-use crate::session::terminal::{CLIENT_QUEUE_DEPTH, TerminalHub};
+use crate::session::terminal::{CLIENT_QUEUE_DEPTH, ConcurrencyTestPoint, TerminalHub};
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::sync::mpsc;
+use std::thread;
 use std::time::Instant;
 
 /// A connection that unwinds after it registered with the session must give the
@@ -80,5 +83,39 @@ fn a_guard_that_fires_after_registration_releases_the_sizing() {
         ownership.owner().is_none(),
         "no viewer is left to own the sizing"
     );
+    hub.stop();
+}
+
+/// A page that reloads into a hub with a large replay fails this way on every
+/// attempt, not once. Twenty unwinds must leave the broadcast list as they found it:
+/// one dead record per failure would accumulate for the life of the hub, and each
+/// would be held behind a gate nothing will open.
+#[test]
+fn repeated_unwinds_leave_no_client_behind() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub =
+        spawn_hub_with_auto_open(&dir.path().to_string_lossy(), Vec::new(), Vec::new(), false);
+    for attempt in 0..20 {
+        hub.set_concurrency_test_hook(|point| {
+            if point == ConcurrencyTestPoint::ReplayFraming {
+                panic!("a connect that dies mid-replay");
+            }
+        });
+        let connecting = {
+            let hub = Arc::clone(&hub);
+            thread::spawn(move || {
+                let died = std::panic::catch_unwind(AssertUnwindSafe(|| attach(&hub)));
+                assert!(died.is_err(), "the connection was meant to unwind");
+            })
+        };
+        connecting
+            .join()
+            .expect("the panic must not escape its thread");
+        assert_eq!(
+            hub.client_count(),
+            0,
+            "attempt {attempt} left a client behind"
+        );
+    }
     hub.stop();
 }
