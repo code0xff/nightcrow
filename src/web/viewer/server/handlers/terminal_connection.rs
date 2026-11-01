@@ -20,6 +20,14 @@ const FLUSH_RETRY: Duration = Duration::from_millis(4);
 #[cfg(test)]
 pub(super) static WAKES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
+/// Count the frames taken off the hub after a write had already stalled. It has
+/// to stay zero: the drain loop's guard is what keeps a client that stopped
+/// reading backing up in the hub instead of in this thread. Test-only, because
+/// the count is the guard itself rather than anything the wire shows.
+#[cfg(test)]
+pub(super) static DEQUEUED_WHILE_STALLED: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 /// Why a connection ended.
 enum End {
     /// The page sent a close frame.
@@ -107,6 +115,11 @@ impl Connection {
             while !self.unflushed {
                 match self.link.try_next() {
                     Waiting::Event(event) => {
+                        #[cfg(test)]
+                        if self.unflushed {
+                            DEQUEUED_WHILE_STALLED
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
                         if let Some(end) = self.apply(event) {
                             return end;
                         }

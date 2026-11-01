@@ -1,10 +1,10 @@
 //! A page on the other end of a real socket: what ends it, and what it releases.
 
-use super::super::terminal_connection::run;
+use super::super::terminal_connection::{DEQUEUED_WHILE_STALLED, run};
 use super::super::terminal_liveness::Timing;
 use super::super::terminal_pipe::JOINS;
 use super::fixture::{Wired, short, wired, wired_panicking};
-use crate::session::terminal::TerminalFrame;
+use crate::session::terminal::{CLIENT_QUEUE_DEPTH, TerminalFrame};
 use std::net::Shutdown;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,8 +36,9 @@ fn a_page_that_stops_answering_is_closed() {
 }
 
 /// A page that never reads must not be able to make the writer hold its frames:
-/// once a write stalls, the hub's own bounded queue fills and its overflow is
-/// what ends the connection, long before the silence limit would.
+/// once a write stalls the writer takes nothing more from the hub, so the hub's
+/// own bounded queue fills and its overflow is what ends the connection, long
+/// before the silence limit would.
 #[test]
 fn a_page_that_never_reads_is_cut_off_by_the_hub() {
     let Wired {
@@ -56,27 +57,45 @@ fn a_page_that_never_reads_is_cut_off_by_the_hub() {
         flag.store(true, Ordering::Release);
     });
 
-    // Large frames fill the loopback socket quickly, so the writer is still
-    // stalled while the hub has a backlog to hand it.
-    let data: Arc<[u8]> = vec![b'x'; 256 * 1024].into();
-    let started = Instant::now();
-    while hub.client_count() > 0 && started.elapsed() < Duration::from_secs(5) {
+    DEQUEUED_WHILE_STALLED.store(0, Ordering::Relaxed);
+    // Fill the queue just short of its cap. A frame large enough that the
+    // socket takes only a handful before stalling keeps the queue this full.
+    let data: Arc<[u8]> = vec![b'x'; 1024 * 1024].into();
+    for _ in 0..CLIENT_QUEUE_DEPTH - 2 {
         hub.test_broadcast(TerminalFrame::Output {
             pane: 1,
             data: Arc::clone(&data),
         });
-        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(hub.client_count(), 1, "the fill itself must fit the queue");
+
+    // A writer that kept draining the hub after the stall would empty a good
+    // part of that backlog here; one that stopped cannot.
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        DEQUEUED_WHILE_STALLED.load(Ordering::Relaxed),
+        0,
+        "no frame may leave the hub while a write is stalled"
+    );
+    assert_eq!(
+        hub.client_count(),
+        1,
+        "the writer must not leave the hub short of work to end it"
+    );
+
+    // The remaining frames now fit only if the queue is still full. The hub's
+    // overflow, not the writer's buffer, is what has to end this client.
+    for _ in 0..40 {
+        hub.test_broadcast(TerminalFrame::Output {
+            pane: 1,
+            data: Arc::clone(&data),
+        });
     }
 
     assert_eq!(
         hub.client_count(),
         0,
         "the hub must cut off a page that stopped reading, instead of the writer buffering for it"
-    );
-    assert!(
-        started.elapsed() < Duration::from_secs(5),
-        "the overflow took longer than the whole test budget: {:?}",
-        started.elapsed()
     );
 
     let deadline = Instant::now() + Duration::from_secs(10);
