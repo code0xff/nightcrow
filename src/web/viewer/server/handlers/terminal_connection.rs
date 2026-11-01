@@ -266,13 +266,16 @@ impl Connection {
     /// Say goodbye. The helper threads and the hub client are released by
     /// [`Link`]'s `Drop`, which runs on every exit path, including a panic.
     ///
-    /// The close frame and the socket shutdown are best effort: the socket may
-    /// be the reason this is running at all.
+    /// The socket is shut down before the close frame. tungstenite's `close`
+    /// flushes, and a flush on the stalled socket a silent end exists for would
+    /// block for the whole write timeout before the shutdown it is meant to
+    /// precede. Nothing is waiting on a close frame the page has stopped
+    /// reading.
     fn finish(mut self, end: End) {
         end.note();
+        self.ws.get_ref().cut_off();
         if let End::Silent(_) = end {
             let _ = self.ws.close(None);
         }
-        self.ws.get_ref().cut_off();
     }
 }
