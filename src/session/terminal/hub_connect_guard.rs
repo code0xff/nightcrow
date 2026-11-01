@@ -10,7 +10,9 @@ use std::time::Instant;
 /// replay, so a panic in between would leave the client in the broadcast list
 /// with its replay gate closed: nothing would ever open the gate, every later
 /// frame would be held until the client overflowed and was cut off, and its size
-/// registration would stay behind for good. Disarmed once the session exists.
+/// registration would stay behind for good. Disarmed once nothing is left that can
+/// fail; from there the session that is handed over unregisters the client itself
+/// (see [`TerminalSession`](super::TerminalSession)).
 pub(super) struct RegistrationGuard<'a> {
     hub: &'a TerminalHub,
     id: u64,
