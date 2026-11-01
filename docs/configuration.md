@@ -52,7 +52,7 @@ commit_log_page_size = 100
 commit_log_prefetch_threshold = 25
 ```
 
-Relative `dir` values are under the user's home/state directory. `rotation` is `daily`, `hourly`, or `size`; `max_size_mb` is `1..=10000` and is used for `size`; `max_days = 0` keeps logs forever, otherwise it is at most 3650 days. `level` is `error`, `warn`, `info`, `debug`, or `trace`. `prompt_log` records terminal prompt input line by line and is off by default. `commit_log_page_size` is `50..=500`; the prefetch threshold is `1..=page_size`.
+Relative `dir` values are under the user's home/state directory. `rotation` is `daily`, `hourly`, or `size`; `max_size_mb` is `1..=10000` and is used for `size`; `max_days = 0` keeps logs forever, otherwise it is at most 3650 days. Expired files are removed when logging starts and again whenever the log rotates, so a long-running daemon also stays within the limit. `level` is `error`, `warn`, `info`, `debug`, or `trace`. `prompt_log` records terminal prompt input line by line and is off by default. `commit_log_page_size` is `50..=500`; the prefetch threshold is `1..=page_size`.
 
 ## `[[startup_command]]`
 

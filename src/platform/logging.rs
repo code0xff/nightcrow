@@ -50,11 +50,14 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
     let (writer, guard) = match config.rotation {
         LogRotation::Hourly => {
             let appender = tracing_appender::rolling::hourly(&log_dir, LOG_FILE_PREFIX);
+            let appender = TimeRotationCleanup::new(appender, &log_dir, config.max_days, 3_600);
             tracing_appender::non_blocking(appender)
         }
         LogRotation::Size => {
             let max_bytes = config.max_size_mb.saturating_mul(BYTES_PER_MB);
-            if let Some(appender) = SizeRollingAppender::new(&log_dir, LOG_FILE_PREFIX, max_bytes) {
+            if let Some(appender) =
+                SizeRollingAppender::new(&log_dir, LOG_FILE_PREFIX, max_bytes, config.max_days)
+            {
                 tracing_appender::non_blocking(appender)
             } else {
                 eprintln!(
@@ -67,6 +70,7 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
         }
         LogRotation::Daily => {
             let appender = tracing_appender::rolling::daily(&log_dir, LOG_FILE_PREFIX);
+            let appender = TimeRotationCleanup::new(appender, &log_dir, config.max_days, 86_400);
             tracing_appender::non_blocking(appender)
         }
     };
@@ -156,6 +160,58 @@ fn cleanup_old_logs(log_dir: &Path, max_days: u32) {
     }
 }
 
+/// A time-rotated appender that sweeps expired logs when its period rolls over.
+///
+/// `tracing_appender` rotates inside its own `write`, on UTC hour and day
+/// boundaries, so there is no rotation event to hook. The period bucket is the
+/// observable equivalent. The sweep runs before the inner write, and preserves
+/// the newest file — the one the appender is about to leave behind.
+struct TimeRotationCleanup<W> {
+    inner: W,
+    dir: PathBuf,
+    max_days: u32,
+    period_secs: u64,
+    bucket: u64,
+}
+
+impl<W> TimeRotationCleanup<W> {
+    fn new(inner: W, dir: &Path, max_days: u32, period_secs: u64) -> Self {
+        Self {
+            inner,
+            dir: dir.to_path_buf(),
+            max_days,
+            period_secs,
+            bucket: epoch_secs() / period_secs,
+        }
+    }
+
+    fn rotate_if_due(&mut self, now_secs: u64) {
+        let bucket = now_secs / self.period_secs;
+        if bucket != self.bucket {
+            self.bucket = bucket;
+            cleanup_old_logs(&self.dir, self.max_days);
+        }
+    }
+}
+
+impl<W: Write> Write for TimeRotationCleanup<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.rotate_if_due(epoch_secs());
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+fn epoch_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0)
+}
+
 /// Returns paths to delete from a list of candidate `(path, mtime)` entries.
 /// Always preserves the newest entry, even if older than the cutoff —
 /// SizeRollingAppender resumes the highest-index file, so deleting it would
@@ -202,13 +258,14 @@ struct SizeRollingInner {
     dir: PathBuf,
     prefix: String,
     max_bytes: u64,
+    max_days: u32,
     current: File,
     current_size: u64,
     index: u32,
 }
 
 impl SizeRollingAppender {
-    fn new(dir: &Path, prefix: &str, max_bytes: u64) -> Option<Self> {
+    fn new(dir: &Path, prefix: &str, max_bytes: u64, max_days: u32) -> Option<Self> {
         let index = latest_size_log_index(dir, prefix);
         let path = dir.join(format!("{prefix}.{index}"));
         let current = OpenOptions::new()
@@ -222,6 +279,7 @@ impl SizeRollingAppender {
                 dir: dir.to_path_buf(),
                 prefix: prefix.to_string(),
                 max_bytes,
+                max_days,
                 current,
                 current_size,
                 index,
@@ -255,6 +313,7 @@ impl Write for SizeRollingAppender {
         // caller's next call.
         let mut total_written = 0usize;
         let mut remaining = buf;
+        let mut rotated = false;
         while !remaining.is_empty() {
             if inner.max_bytes > 0 && inner.current_size + remaining.len() as u64 > inner.max_bytes
             {
@@ -262,6 +321,7 @@ impl Write for SizeRollingAppender {
                 let path = inner.dir.join(format!("{}.{}", inner.prefix, inner.index));
                 inner.current = OpenOptions::new().create(true).append(true).open(path)?;
                 inner.current_size = 0;
+                rotated = true;
             }
             let n = inner.current.write(remaining)?;
             if n == 0 {
@@ -273,6 +333,13 @@ impl Write for SizeRollingAppender {
             inner.current_size += n as u64;
             total_written += n;
             remaining = &remaining[n..];
+        }
+        // The sweep reads the directory and can remove files, so it runs after
+        // releasing the lock the writers share.
+        let sweep = rotated.then(|| (inner.dir.clone(), inner.max_days));
+        drop(inner);
+        if let Some((dir, max_days)) = sweep {
+            cleanup_old_logs(&dir, max_days);
         }
         Ok(total_written)
     }
