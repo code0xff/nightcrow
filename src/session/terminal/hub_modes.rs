@@ -13,11 +13,36 @@
 use crate::backend::PaneId;
 use crate::runtime::emulator::{PaneEmulator, PaneModes};
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Scrollback for the tracking emulators: none. The byte ring in `PaneState`
 /// carries history; paying for it twice per pane would buy nothing.
 const NO_HISTORY: usize = 0;
+
+/// Least time between two end-of-tick snapshots of the same alternate-screen
+/// pane. A client connecting between two of them is replayed the older screen
+/// plus the bytes recorded since. Replay is exact for the state that screen
+/// carries; the state it does not — scroll region, saved cursor, origin mode,
+/// charset, insert mode, and autowrap as of the snapshot — stays exposed in the
+/// tail for at most one interval after the pane's last write. The paced pass takes a
+/// trailing snapshot once a pane that still owes bytes falls idle, so a quiet
+/// pane does not keep that state exposed indefinitely.
+const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(250);
+
+/// How much output waiting on top of a pane's last screen makes that wait
+/// pointless. At this point the replay is already as long as the pace sets out
+/// to bound, so a snapshot is taken as soon as the stream ends clean.
+const SNAPSHOT_OWED_BYTES: usize = 64 * 1024;
+
+/// How recently a pane's screen was serialized, and how much output has been
+/// recorded on top of it since.
+#[derive(Default)]
+struct Pace {
+    /// `None` until this tracker has taken one; a pane it has never
+    /// snapshotted is due at the first opportunity.
+    at: Option<Instant>,
+    owed: usize,
+}
 
 /// What one chunk of a pane's output said about it.
 pub(super) struct Observed {
@@ -38,6 +63,8 @@ pub(super) struct PaneModeTracker {
     /// Whether each pane was on the alternate screen as of its last chunk, so a
     /// change can be reported without the caller having to remember.
     alt_screen: HashMap<PaneId, bool>,
+    /// How often each pane's screen has been worth serializing.
+    pace: HashMap<PaneId, Pace>,
 }
 
 impl PaneModeTracker {
@@ -82,7 +109,11 @@ impl PaneModeTracker {
                 let emulator = self.emulators.get_mut(&pane)?;
                 let events = emulator.settle_sync();
                 let modes = emulator.modes();
-                Some((pane, self.observed(pane, modes, events.title)))
+                let observed = self.observed(pane, modes, events.title);
+                if observed.alt_changed {
+                    self.reset_pace(pane);
+                }
+                Some((pane, observed))
             })
             .collect()
     }
@@ -119,12 +150,101 @@ impl PaneModeTracker {
         if let Some(emulator) = self.emulators.get_mut(&pane) {
             emulator.resize(rows, cols);
         }
+        // The screen stored before the resize describes the old grid. Drop the
+        // window so the next clean boundary takes a fresh one instead of
+        // waiting out a period measured against the record it replaced.
+        if let Some(pace) = self.pace.get_mut(&pane) {
+            pace.at = None;
+        }
     }
 
     /// The bytes that reproduce this pane's screen, or `None` for a pane that has
     /// produced no output yet — there is no emulator, and nothing to show.
     pub(super) fn snapshot(&self, pane: PaneId) -> Option<Vec<u8>> {
         self.emulators.get(&pane).map(|e| e.screen_snapshot())
+    }
+
+    /// Note how much output a pane's record now holds on top of the screen the
+    /// worker last stored — the bytes a connecting client is replayed after it.
+    pub(super) fn note_owed(&mut self, pane: PaneId, owed: usize) {
+        self.pace.entry(pane).or_default().owed = owed;
+    }
+
+    /// Note that `pane`'s screen was just stored, so nothing is owed on top of
+    /// it and the next one waits out a full [`SNAPSHOT_INTERVAL`] from `now`.
+    ///
+    /// Every store has to say so: a screen taken while a tick is still
+    /// collecting output would otherwise be serialized a second time by the
+    /// tick's paced pass, and a resize's screen would leave the old window in
+    /// charge of the new grid.
+    pub(super) fn mark_stored(&mut self, pane: PaneId, now: Instant) {
+        let pace = self.pace.entry(pane).or_default();
+        pace.at = Some(now);
+        pace.owed = 0;
+    }
+
+    /// Drop a pane's pace when its program switches screens. Bytes owed on the
+    /// old screen must not drive a snapshot on the new one, and the window that
+    /// bounded the old record says nothing about how recently the new one was
+    /// stored.
+    pub(super) fn reset_pace(&mut self, pane: PaneId) {
+        self.pace.remove(&pane);
+    }
+
+    /// The screens worth taking at the end of a tick for the alternate-screen
+    /// panes whose output moved them, and for the panes that still owe bytes
+    /// after falling idle, and for which the record is at a clean boundary.
+    ///
+    /// At most once per pane per [`SNAPSHOT_INTERVAL`]: a busy program sends
+    /// several chunks per tick, and serializing its grid on each of them is the
+    /// most expensive thing the worker does — while the bytes it sends in
+    /// between are exactly what a replay carries after the last screen, so
+    /// waiting lengthens the replay rather than losing anything. A pane whose
+    /// owed output has grown past [`SNAPSHOT_OWED_BYTES`] is taken early, which
+    /// keeps that replay bounded between the worker's own crowded snapshots.
+    ///
+    /// The screens returned are accounted for here, so a caller only has to
+    /// store them.
+    pub(super) fn settle_restless(
+        &mut self,
+        restless: &[PaneId],
+        now: Instant,
+    ) -> Vec<(PaneId, Vec<u8>)> {
+        let mut candidates: Vec<PaneId> = restless.to_vec();
+        // A pane that went idle inside its window still owes the bytes it wrote
+        // after its last screen. The caller only names panes that produced
+        // output this tick, so without them a quiet pane would keep that tail
+        // — and the snapshot state it depends on — indefinitely. Including
+        // owed panes makes the latest write the one the interval is measured
+        // from, whichever tick it happened on.
+        for (&pane, pace) in &self.pace {
+            if pace.owed > 0 && !candidates.contains(&pane) {
+                candidates.push(pane);
+            }
+        }
+        let mut screens = Vec::new();
+        for pane in candidates {
+            if !self.snapshot_due(pane, now) || !self.at_boundary(pane) {
+                continue;
+            }
+            let Some(screen) = self.snapshot(pane) else {
+                continue;
+            };
+            self.mark_stored(pane, now);
+            screens.push((pane, screen));
+        }
+        screens
+    }
+
+    /// Whether this pane's screen is worth serializing at `now`.
+    fn snapshot_due(&self, pane: PaneId, now: Instant) -> bool {
+        let Some(pace) = self.pace.get(&pane) else {
+            return true;
+        };
+        pace.owed > SNAPSHOT_OWED_BYTES
+            || pace
+                .at
+                .is_none_or(|at| now.saturating_duration_since(at) >= SNAPSHOT_INTERVAL)
     }
 
     /// Whether this pane's output so far ends with every sequence closed — the
@@ -153,5 +273,6 @@ impl PaneModeTracker {
     pub(super) fn forget(&mut self, pane: PaneId) {
         self.emulators.remove(&pane);
         self.alt_screen.remove(&pane);
+        self.pace.remove(&pane);
     }
 }

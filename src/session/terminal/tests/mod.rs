@@ -32,17 +32,23 @@ mod screen_replay;
 mod scrollback_depth;
 mod size_owner;
 mod size_owner_resize_race;
+mod snapshot_cycles;
+mod snapshot_desk;
+mod snapshot_pace;
+mod snapshot_pty_windows;
+mod snapshot_resize_pace;
+mod snapshot_throttle;
+mod snapshot_trailing;
 mod startup;
 mod startup_policy;
+mod waiting;
 mod wire;
 mod zoom;
 
 use crate::backend::PaneId;
-use crate::session::terminal::frame::TerminalFrame;
 use crate::session::terminal::{ConcurrencyTestPoint, TerminalHub};
 use std::sync::{Arc, Mutex, mpsc};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use super::TerminalSession;
 
@@ -51,13 +57,7 @@ use frames::{
     hello_panes, pending_count, reordered_order, resized_size, zoomed_pane,
 };
 
-/// Deadline for the real-shell tests below. `connect` spawns the user's
-/// actual `$SHELL` (an interactive zsh sources its full rc chain), and
-/// cargo runs tests in parallel, so several shells initialize at once — a
-/// tighter budget was measurably flaky under load. A generous bound only
-/// delays the failure verdict; passing runs still finish the instant the
-/// frame arrives. Mirrors `backend::pty::tests::PTY_TEST_DEADLINE`.
-pub(super) const SHELL_TEST_DEADLINE: Duration = Duration::from_secs(15);
+pub(super) use waiting::{SHELL_TEST_DEADLINE, next_matching, wait_for};
 
 /// How long a test waits for a connection to reach a point a hook announces.
 pub(super) const HOOK_DEADLINE: Duration = Duration::from_secs(5);
@@ -79,29 +79,6 @@ pub(super) fn pause_at_framing(hub: &Arc<TerminalHub>) -> (mpsc::Receiver<()>, m
         }
     });
     (reached, resume)
-}
-
-pub(super) fn wait_for<T>(mut take: impl FnMut() -> Option<T>) -> Option<T> {
-    let deadline = Instant::now() + SHELL_TEST_DEADLINE;
-    while Instant::now() < deadline {
-        if let Some(value) = take() {
-            return Some(value);
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-    None
-}
-
-/// Pull frames until one satisfies `want`, ignoring the rest.
-pub(super) fn next_matching(
-    session: &TerminalSession,
-    mut want: impl FnMut(&TerminalFrame) -> bool,
-) -> Option<TerminalFrame> {
-    wait_for(|| {
-        session
-            .next_frame(Duration::from_millis(50))
-            .filter(|f| want(f))
-    })
 }
 
 /// Collect the ids of the first `n` distinct panes announced to `session`,
