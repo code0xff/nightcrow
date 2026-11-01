@@ -13,10 +13,16 @@ export type RepoStatus = Status & { unavailable?: string };
 /** What a working-tree row says about the file's content. The server sends a
  *  status event with every row's mtimes, so a refresh of the open diff is
  *  worthwhile only when this changes for its row. */
-function rowKey(row: ChangedFile): string {
-  return [row.index, row.worktree, row.mtime ?? "", row.old_path ?? ""].join(
-    "\u0000",
-  );
+function rowKey(row: ChangedFile, head: string | undefined): string {
+  // The diff is against HEAD, so a moved HEAD can change it while the row's
+  // codes and mtime stay the same (e.g. after a soft reset).
+  return [
+    head ?? "",
+    row.index,
+    row.worktree,
+    row.mtime ?? "",
+    row.old_path ?? "",
+  ].join("\u0000");
 }
 
 export interface UseStatusArgs {
@@ -80,7 +86,7 @@ export function useStatus({
   useEffect(() => {
     if (!repo || !status) return;
     const previous = prevKeysRef.current;
-    prevKeysRef.current = new Map(status.files.map((f) => [f.path, rowKey(f)]));
+    prevKeysRef.current = new Map(status.files.map((f) => [f.path, rowKey(f, status.head)]));
     const current = paneRef.current;
     if (tabRef.current !== "status" || current.kind !== "diff") {
       diffRowRef.current = null;
@@ -93,7 +99,7 @@ export function useStatus({
       setPane({ kind: "empty" });
       return;
     }
-    const key = rowKey(row);
+    const key = rowKey(row, status.head);
     const seen = diffRowRef.current;
     if (seen?.path === path && seen.key === key) return;
     // Opened since the last event: the diff was read against the working tree

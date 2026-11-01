@@ -29,6 +29,37 @@ function bytes(length: number): Uint8Array {
 }
 
 describe("TerminalWrites", () => {
+  it("keeps draining after a barrier whose callback runs synchronously", () => {
+    // Bytes are parsed later, but an empty write completes at once, so the
+    // barrier's callback runs inside the drain that submitted it.
+    const written: (string | Uint8Array)[] = [];
+    const pending: (() => void)[] = [];
+    const term = {
+      write: (data: string | Uint8Array, callback?: () => void) => {
+        written.push(data);
+        if (typeof data === "string") callback?.();
+        else if (callback) pending.push(callback);
+      },
+    } as unknown as Terminal;
+    const queue = new TerminalWrites(term, 4, 1);
+    const ran = vi.fn();
+    const big = bytes(5);
+    const middle = bytes(2);
+    const after = bytes(2);
+
+    queue.write(big);
+    // Past the high-water mark: everything else waits behind the first frame.
+    queue.write(middle);
+    queue.barrier(ran);
+    queue.write(after);
+    expect(written).toEqual([big]);
+
+    pending.shift()?.();
+
+    expect(ran).toHaveBeenCalledTimes(1);
+    expect(written).toEqual([big, middle, "", after]);
+  });
+
   it("stops handing frames over at the high-water mark and resumes below the low one", () => {
     const fake = fakeTerminal();
     const queue = new TerminalWrites(fake.term, 8, 3);

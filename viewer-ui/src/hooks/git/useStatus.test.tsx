@@ -83,6 +83,15 @@ describe("useStatus open diff refresh", () => {
     expect(api.diff).toHaveBeenCalledTimes(2);
   });
 
+  it("refetches when HEAD moves under an unchanged row", async () => {
+    vi.mocked(api.diff).mockResolvedValue(diff);
+    const { send } = setup();
+    await send({ ...status([row("a.ts", 100)]), head: "aaa" });
+    vi.mocked(api.diff).mockClear();
+    await send({ ...status([row("a.ts", 100)]), head: "bbb" });
+    expect(api.diff).toHaveBeenCalledTimes(1);
+  });
+
   it("empties the pane when the open row disappears", async () => {
     vi.mocked(api.diff).mockResolvedValue(diff);
     const { send, setPane } = setup();

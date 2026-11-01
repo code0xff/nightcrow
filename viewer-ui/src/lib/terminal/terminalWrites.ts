@@ -81,8 +81,11 @@ export class TerminalWrites {
             if (!barrier.cancelled) item.run();
             this.pump();
           });
-          // Everything after the barrier belongs after it has run.
-          return;
+          // Everything after the barrier belongs after it has run. A callback
+          // that ran synchronously has already cleared it, and its own pump
+          // returned early because this one is still running, so keep going.
+          if (this.barrierInFlight === barrier) return;
+          continue;
         }
         if (this.outstanding >= this.highWater) return;
         this.items.shift();
