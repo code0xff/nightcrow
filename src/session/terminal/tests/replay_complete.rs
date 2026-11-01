@@ -2,8 +2,10 @@ use super::{attach, spawn_hub_with_auto_open};
 use crate::runtime::emulator::PaneModes;
 use crate::session::terminal::CLIENT_QUEUE_DEPTH;
 use crate::session::terminal::frame::{ServerMessage, TerminalFrame};
+use crate::session::terminal::hub_helpers::PaneState;
 use crate::session::terminal::hub_modes::Observed;
-use crate::session::terminal::hub_replay::ReplayQueue;
+use crate::session::terminal::hub_replay::{REPLAY_CHUNK_BYTES, ReplayQueue};
+use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -110,4 +112,65 @@ fn replay_frame_budget_leaves_one_slot_for_completion() {
     ))
     .expect("the reserved slot accepts completion");
     assert_eq!(rx.try_iter().count(), CLIENT_QUEUE_DEPTH + 1);
+}
+
+/// The replay's frame cuts are part of the wire contract: a client applies the
+/// concatenation, but one frame may never approach the 4 MiB socket ceiling, and
+/// 1 MiB cuts are what keep the largest allowed replay inside the client queue
+/// depth. Capture builds these frames, so it has to cut them where the old
+/// `chunks` call did.
+#[test]
+fn a_replay_is_cut_into_the_same_one_mib_frames() {
+    const PANE: u32 = 7;
+    const ROWS: u16 = 24;
+    const COLS: u16 = 80;
+    let total = 2 * REPLAY_CHUNK_BYTES + 7;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub =
+        spawn_hub_with_auto_open(&dir.path().to_string_lossy(), Vec::new(), Vec::new(), false);
+    hub.state
+        .lock()
+        .expect("terminal state poisoned")
+        .panes
+        .push(PaneState {
+            id: PANE,
+            title: None,
+            scrollback: std::iter::repeat_n(b'x', total).collect::<VecDeque<u8>>(),
+            normal_screen: Vec::new(),
+            covered: 0,
+            screen: Vec::new(),
+            since: VecDeque::new(),
+            rows: ROWS,
+            cols: COLS,
+            modes: PaneModes::default(),
+        });
+
+    let session = attach(&hub);
+    let mut sizes = Vec::new();
+    let mut assembled = Vec::new();
+    while let Some(frame) = session.next_frame(Duration::from_millis(300)) {
+        if let TerminalFrame::Output { pane, data } = frame
+            && pane == PANE
+        {
+            sizes.push(data.len());
+            assembled.extend(data.iter().copied());
+        }
+    }
+    hub.stop();
+
+    assert!(
+        sizes.len() == 4 && sizes[0] < REPLAY_CHUNK_BYTES,
+        "the mode prelude leads in its own frame, got {sizes:?}"
+    );
+    assert_eq!(
+        &sizes[1..],
+        &[REPLAY_CHUNK_BYTES, REPLAY_CHUNK_BYTES, 7],
+        "the record must be cut where the wire contract cuts it"
+    );
+    assert_eq!(assembled.len(), sizes.iter().sum::<usize>());
+    assert!(
+        assembled[sizes[0]..].iter().all(|&byte| byte == b'x'),
+        "the record's bytes must arrive exactly once and in order"
+    );
 }
