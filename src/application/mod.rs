@@ -10,6 +10,7 @@ pub(crate) mod draw_backend;
 pub(crate) mod event_loop;
 pub(crate) mod input;
 pub(crate) mod redraw;
+pub(crate) mod screen_geometry;
 pub(crate) mod session_link;
 mod session_tabs;
 mod size_activity;

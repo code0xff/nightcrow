@@ -17,23 +17,25 @@ impl TerminalState {
     /// pane's tab, and terminal query replies back to the program that asked.
     /// Replies bypass [`send_input`](Self::send_input) on purpose: an
     /// emulator-generated answer must not clear the user's scroll position or
-    /// land in the prompt log.
+    /// land in the prompt log. Reports whether the pane's title changed, which
+    /// is visible even for a pane outside the split window.
     pub(super) fn apply_emulator_events(
         &mut self,
         pane: PaneId,
         events: EmulatorEvents,
         now: Instant,
-    ) {
+    ) -> bool {
         if events.bell {
             self.raise_attention();
         }
+        let mut title_changed = false;
         if let Some(title) = events.title {
-            let changed = self
+            title_changed = self
                 .panes
                 .iter()
                 .find(|info| info.id == pane)
                 .is_some_and(|info| info.title != title);
-            if changed {
+            if title_changed {
                 self.note_title_change(pane, now);
             }
             if let Some(info) = self.panes.iter_mut().find(|info| info.id == pane) {
@@ -46,6 +48,7 @@ impl TerminalState {
         {
             tracing::warn!("failed to send terminal reply to pane {pane}: {e}");
         }
+        title_changed
     }
 
     /// End every synchronized update that has outlived its timeout as of

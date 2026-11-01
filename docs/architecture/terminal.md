@@ -8,6 +8,7 @@ The lower panel renders multiple PTYs inside the visible window at once rather t
 - Pane swap changes only Vec order and active index; parser, scroll, prompt buffer, and PTY remain keyed by `PaneId`. Pane reorder is confirmed by a session request/event and is not persisted across restart.
 - Fullscreen cycles `Off → Grid → Zoom → Off`. With only one pane it skips Zoom; closing the last pane returns to Off. Only whether fullscreen is active is persisted.
 - `split_pane_areas` computes a grid for the pane count; a single pane uses a borderless path. `visible_pane_cells` is the single geometry source for rendering, resizing, and hit-testing. A remote backend updates emulator size only after a confirmed `Resized` event.
+- `ui::terminal_tab::screen::ScreenCells` draws a pane straight into the frame buffer, cell by cell: the emulator already knows grapheme boundaries, so nothing builds rows as `Line`/`Paragraph` text for ratatui to re-segment. A wide glyph is written on its first cell and the spacer cell it covers is cleared; combining characters are appended to their base cell's symbol; a glyph that cannot fit the remaining columns is dropped whole. Clipping, styles, and the cursor follow the pane's content rectangle.
 - All panes keep running in the background. Keyboard input, paste, prompt history, and scroll target only the active pane; mouse events outside pane content are handled only as commands for that area.
 
 ## Terminal emulation

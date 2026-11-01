@@ -1,142 +1,8 @@
-use crate::backend::{BackendEvent, PaneId};
+use crate::backend::PaneId;
 use crate::runtime::emulator::PaneEmulator;
 use crate::runtime::terminal::{PaneInfo, SCROLLBACK_LINES, TerminalState};
 
 impl TerminalState {
-    /// Drain pending backend events into pane emulators and pane metadata.
-    /// Returns the pane ids the backend signalled as exited so the caller
-    /// can run cross-cutting cleanup (focus redirect, fullscreen reset).
-    #[cfg(test)]
-    pub fn poll(&mut self) -> Vec<PaneId> {
-        self.poll_at(std::time::Instant::now())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn poll_at(&mut self, now: std::time::Instant) -> Vec<PaneId> {
-        self.poll_at_with_activity(now).0
-    }
-
-    /// Drain terminal events and report whether anything can affect the next
-    /// rendered frame. The ordinary `poll` API remains exit-only for callers
-    /// that need just lifecycle cleanup; the TUI also needs output, title,
-    /// resize, and delayed synchronized-update activity.
-    pub(crate) fn poll_with_activity(&mut self) -> (Vec<PaneId>, bool) {
-        self.poll_at_with_activity(std::time::Instant::now())
-    }
-
-    pub(crate) fn poll_at_with_activity(&mut self, now: std::time::Instant) -> (Vec<PaneId>, bool) {
-        let mut exited = Vec::new();
-        let events: Vec<BackendEvent> = self
-            .backend
-            .as_mut()
-            .map(|b| b.drain_events())
-            .unwrap_or_default();
-        let had_events = !events.is_empty();
-
-        for event in events {
-            match event {
-                BackendEvent::Created {
-                    pane,
-                    rows,
-                    cols,
-                    requested,
-                    title,
-                } => self.adopt_pane(pane, rows, cols, requested, title),
-                BackendEvent::Output { pane, data } => {
-                    let Some(emulator) = self.emulators.get_mut(&pane) else {
-                        continue;
-                    };
-                    let events = emulator.process(&data);
-                    self.apply_emulator_events(pane, events, now);
-                }
-                BackendEvent::ReplayOutput { pane, data } => {
-                    let Some(emulator) = self.emulators.get_mut(&pane) else {
-                        continue;
-                    };
-                    emulator.suppress_pty_replies(true);
-                    self.replaying_panes.insert(pane);
-                    let events = emulator.process(&data);
-                    self.apply_emulator_events(pane, events, now);
-                }
-                BackendEvent::ReplayComplete => {
-                    let panes: Vec<PaneId> = self.replaying_panes.drain().collect();
-                    for pane in panes {
-                        let Some(emulator) = self.emulators.get_mut(&pane) else {
-                            continue;
-                        };
-                        let events = emulator.settle_sync();
-                        self.apply_emulator_events(pane, events, now);
-                        if let Some(emulator) = self.emulators.get_mut(&pane) {
-                            emulator.suppress_pty_replies(false);
-                        }
-                    }
-                }
-                // The session set this pane to a size, which may not be the one
-                // this client asked for — or any it asked for. The emulator has
-                // to wrap where the child does, so it follows.
-                BackendEvent::Resized { pane, rows, cols } => {
-                    self.confirm_resize(pane, rows, cols);
-                }
-                // Only for a pane this client holds, like `Exited`: a marker
-                // for a pane that is not on any of this client's tabs would
-                // have nothing to point at.
-                BackendEvent::Attention { pane } => {
-                    if self.panes.iter().any(|p| p.id == pane) {
-                        self.raise_attention();
-                    }
-                }
-                BackendEvent::Reordered { order } => self.apply_order(&order),
-                BackendEvent::Recovery {
-                    pane,
-                    state,
-                    detail,
-                    deadline_epoch,
-                    attempt,
-                } => self.apply_recovery(pane, state, detail, deadline_epoch, attempt),
-                BackendEvent::SizeOwnership { owned } => {
-                    // Gaining it means the panes are this client's layout to
-                    // set, and they are currently at someone else's sizes — so
-                    // forget what was applied and let the next frame fit them.
-                    if owned && !self.owns_size {
-                        self.last_content_size.clear();
-                    } else if !owned && self.owns_size {
-                        self.last_content_size = self.confirmed_content_size.clone();
-                    }
-                    if owned != self.owns_size {
-                        self.pending_content_size.clear();
-                    }
-                    self.owns_size = owned;
-                }
-                BackendEvent::Exited { pane } => {
-                    // Only for a pane this client still has. An exit can arrive
-                    // for one already gone — reported twice, or for a pane
-                    // another client closed and this one never adopted — and
-                    // acting on it would send a close request for a pane that no
-                    // longer exists and clamp focus over nothing.
-                    if !self.panes.iter().any(|p| p.id == pane) {
-                        continue;
-                    }
-                    self.raise_attention();
-                    // Told to the backend as well as forgotten here: a local
-                    // `PtyBackend` leaves pane removal to its caller (see its
-                    // `drain_events`), so this is what releases the PTY.
-                    if let Some(backend) = &mut self.backend {
-                        backend.destroy_pane(pane);
-                    }
-                    tracing::info!(pane, "terminal pane closed");
-                    self.remove_pane_state(pane);
-                    self.panes.retain(|p| p.id != pane);
-                    exited.push(pane);
-                }
-            }
-        }
-        // After the drain, so an update this tick's own output closed is never
-        // cut short by the clock.
-        let settled_sync = self.settle_sync_updates(now);
-        let settled_title = self.settle_title_attention(now);
-        (exited, had_events || settled_sync || settled_title)
-    }
-
     /// Allocate a new bare interactive-shell pane.
     pub fn create_pane(&mut self) -> anyhow::Result<()> {
         self.create_pane_with(None, None)
@@ -207,17 +73,17 @@ impl TerminalState {
     ///
     /// `requested` says whether this client asked: one it did takes the focus,
     /// and one another client opened lands in the list without moving
-    /// anybody's cursor.
-    fn adopt_pane(
+    /// anybody's cursor. Reports whether the pane was new to this client.
+    pub(super) fn adopt_pane(
         &mut self,
         id: PaneId,
         rows: u16,
         cols: u16,
         requested: bool,
         named: Option<String>,
-    ) {
+    ) -> bool {
         if self.panes.iter().any(|pane| pane.id == id) {
-            return;
+            return false;
         }
         let (rows, cols) = crate::runtime::emulator::effective_size(rows, cols);
         self.emulators
@@ -242,6 +108,7 @@ impl TerminalState {
         }
         self.sync_visible_window();
         tracing::info!(pane = id, "terminal pane opened");
+        true
     }
 
     pub(super) fn remove_pane_state(&mut self, id: PaneId) {

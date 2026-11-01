@@ -54,7 +54,7 @@ fn replay_completion_flushes_synchronized_screen_and_title_without_replying() {
     assert_eq!(state.panes[0].title, "shell 1");
 
     events.borrow_mut().push(BackendEvent::ReplayComplete);
-    let (_, changed) = state.poll_at_with_activity(Instant::now());
+    let changed = state.poll_at_with_activity(Instant::now()).frame_changed;
 
     assert!(changed);
     assert_eq!(state.panes[0].title, "Replay title");

@@ -3,17 +3,108 @@ use crate::backend::PaneId;
 use crate::runtime::emulator::{CellView, ScreenView};
 use ratatui::{
     Frame,
+    buffer::{Buffer, CellWidth},
     layout::{Position, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    widgets::Widget,
 };
 
+/// Draws one pane's emulated grid into the frame buffer, one cell at a time.
+///
+/// The `Line`/`Paragraph` route needs a `String` per style run and then has
+/// ratatui re-segment every row into graphemes, though the emulator already
+/// knows the grapheme boundaries: each screen cell is one grapheme, with its
+/// combining characters attached.
+pub(crate) struct ScreenCells<'a> {
+    app: &'a App,
+    pane: PaneId,
+}
+
+impl<'a> ScreenCells<'a> {
+    pub(crate) fn new(app: &'a App, pane: PaneId) -> Self {
+        Self { app, pane }
+    }
+}
+
+impl Widget for ScreenCells<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let Some(screen) = self.app.terminal.screen_for_pane(self.pane) else {
+            write_placeholder(area, buf);
+            return;
+        };
+        let (screen_rows, screen_cols) = screen.size();
+        let rows = area.height.min(screen_rows);
+        let cols = area.width.min(screen_cols);
+
+        let mut symbol = String::new();
+        for row in 0..rows {
+            let y = area.y.saturating_add(row);
+            for col in 0..cols {
+                let Some(cell) = screen.cell(row, col) else {
+                    break;
+                };
+                // Wide characters occupy two columns: the glyph lives on the
+                // first cell and a spacer fills the second; writing anything
+                // for the spacer would shift the rest of the row.
+                if cell.is_wide_spacer() {
+                    continue;
+                }
+                symbol.clear();
+                cell.append_contents(&mut symbol);
+                let width = symbol.cell_width();
+                // Nothing a terminal can show here, and no column of its own.
+                if width == 0 {
+                    continue;
+                }
+                let x = area.x.saturating_add(col);
+                // A glyph that would straddle the edge is dropped whole, as a
+                // clipped line drops it, rather than half-drawn.
+                if x.saturating_add(width) > area.right() {
+                    break;
+                }
+                let Some(target) = buf.cell_mut((x, y)) else {
+                    break;
+                };
+                target.set_symbol(&symbol).set_style(cell_to_style(&cell));
+                if width > 1
+                    && let Some(covered) = buf.cell_mut((x.saturating_add(1), y))
+                {
+                    covered.reset();
+                }
+            }
+        }
+    }
+}
+
+fn write_placeholder(area: Rect, buf: &mut Buffer) {
+    let text = " (no output) ";
+    let style = Style::default().fg(Color::DarkGray);
+    let mut x = area.x;
+    for ch in text.chars() {
+        if x >= area.right() {
+            break;
+        }
+        let mut encoded = [0u8; 4];
+        if let Some(cell) = buf.cell_mut((x, area.y)) {
+            cell.set_symbol(ch.encode_utf8(&mut encoded))
+                .set_style(style);
+        }
+        x = x.saturating_add(1);
+    }
+}
+
+/// The reference renderer for the same rows, kept to prove the widget draws
+/// them identically. It goes through `Paragraph`, which is what the frame
+/// loop used to do for every visible pane.
+#[cfg(test)]
 pub(crate) fn build_screen_lines(
     app: &App,
     pane_id: PaneId,
     rows: u16,
     cols: u16,
-) -> Vec<Line<'static>> {
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+
     let Some(screen) = app.terminal.screen_for_pane(pane_id) else {
         return vec![Line::from(Span::styled(
             " (no output) ",

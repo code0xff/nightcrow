@@ -63,11 +63,13 @@ impl TerminalState {
     /// is skipped, and a pane the order omits keeps its place at the end.
     /// Focus follows the *pane* it was on rather than the slot — the point of
     /// a swap is to move a pane while still looking at it.
+    /// Reports whether the order this client holds changed.
     ///
     /// Test-only for a locally-backed state, which has no session to be told
     /// by; [`swap_active_with`](Self::swap_active_with) is what asks in
     /// production.
-    pub(crate) fn apply_order(&mut self, order: &[PaneId]) {
+    pub(crate) fn apply_order(&mut self, order: &[PaneId]) -> bool {
+        let previous: Vec<PaneId> = self.panes.iter().map(|pane| pane.id).collect();
         let active_id = self.active_pane_id();
         let mut taken: Vec<PaneInfo> = Vec::with_capacity(self.panes.len());
         for id in order {
@@ -82,6 +84,7 @@ impl TerminalState {
             .unwrap_or(self.active)
             .min(self.panes.len().saturating_sub(1));
         self.sync_visible_window();
+        previous != self.panes.iter().map(|pane| pane.id).collect::<Vec<_>>()
     }
 
     /// Ask for a swap and take delivery of it in one step. Only for tests, which
