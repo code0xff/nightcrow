@@ -4,6 +4,7 @@ mod sse;
 mod terminal;
 mod terminal_batch;
 mod terminal_connection;
+mod terminal_duplex;
 mod terminal_errors;
 mod terminal_liveness;
 mod terminal_pipe;

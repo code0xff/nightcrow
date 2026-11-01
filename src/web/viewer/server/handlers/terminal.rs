@@ -140,3 +140,7 @@ mod fixture;
 #[cfg(test)]
 #[path = "terminal_socket_tests.rs"]
 mod socket_tests;
+
+#[cfg(test)]
+#[path = "terminal_release_tests.rs"]
+mod release_tests;

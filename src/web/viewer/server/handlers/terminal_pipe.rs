@@ -11,14 +11,15 @@
 //! so a control frame and a burst of output can never interleave on the wire.
 
 use crate::session::terminal::{FrameWait, TerminalFrame, TerminalSession};
-use std::collections::VecDeque;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::net::{Shutdown, TcpStream};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TryRecvError, sync_channel};
 use std::thread::JoinHandle;
 use std::time::Duration;
+
+pub(super) use super::terminal_duplex::Duplex;
 
 /// Events a connection may have in flight before a producer waits. Bytes are
 /// read in chunks, so this bounds both directions: the reader stops pulling
@@ -258,60 +259,6 @@ fn spawn_frames(
                 }
             }
         })
-}
-
-/// Writes go straight to the connection; reads come from bytes the reader
-/// thread already took off it. Handing the writer's socket to the WebSocket and
-/// the reader's clone to the reader keeps each direction in one thread.
-pub(super) struct Duplex {
-    socket: TcpStream,
-    buffered: VecDeque<u8>,
-}
-
-impl Duplex {
-    pub(super) fn new(socket: TcpStream) -> Self {
-        Self {
-            socket,
-            buffered: VecDeque::new(),
-        }
-    }
-
-    /// Offer the reader's bytes to the WebSocket's parser.
-    pub(super) fn feed(&mut self, bytes: &[u8]) {
-        self.buffered.extend(bytes.iter().copied());
-    }
-
-    /// Shut the connection down. Any handle to the socket does this for all of
-    /// them, which is also how the hub ends a client that stopped keeping up.
-    pub(super) fn cut_off(&self) {
-        let _ = self.socket.shutdown(Shutdown::Both);
-    }
-}
-
-impl Read for Duplex {
-    /// `WouldBlock` with nothing buffered is the parser asking for bytes that
-    /// have not arrived; tungstenite treats it as a stall and keeps its decode
-    /// state, so the next `feed` resumes exactly where this stopped.
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.buffered.is_empty() {
-            return Err(io::Error::from(io::ErrorKind::WouldBlock));
-        }
-        let taken = buf.len().min(self.buffered.len());
-        for (slot, byte) in buf.iter_mut().zip(self.buffered.drain(..taken)) {
-            *slot = byte;
-        }
-        Ok(taken)
-    }
-}
-
-impl Write for Duplex {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.socket.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.socket.flush()
-    }
 }
 
 #[cfg(test)]

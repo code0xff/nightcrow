@@ -1,40 +1,15 @@
-//! A page on the other end of a real socket: what keeps it, and what ends it.
+//! A page on the other end of a real socket: what keeps it open.
 
 use super::super::terminal_connection::{WAKES, run};
 use super::super::terminal_liveness::Timing;
-use super::super::terminal_pipe::{GUARD_WAKES, JOINS, READ_GUARD};
-use super::fixture::{Wired, short, wired, wired_panicking, wired_with};
+use super::super::terminal_pipe::{GUARD_WAKES, READ_GUARD};
+use super::fixture::{Wired, short, wired, wired_with};
 use crate::session::terminal::{CLIENT_QUEUE_DEPTH, TerminalFrame};
 use std::net::Shutdown;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tungstenite::Message;
-
-/// No read, no write, no pong: the page's network path is gone even though its
-/// socket still exists on this side.
-#[test]
-fn a_page_that_stops_answering_is_closed() {
-    let wired = wired();
-    let started = Instant::now();
-    run(wired.served, wired.link, wired.session, short());
-    let elapsed = started.elapsed();
-
-    assert!(
-        elapsed >= Duration::from_millis(400),
-        "the socket was closed before the page had a chance to answer: {elapsed:?}"
-    );
-    assert!(
-        elapsed < Duration::from_secs(5),
-        "the loop never woke to notice: {elapsed:?}"
-    );
-    assert_eq!(
-        wired.hub.client_count(),
-        0,
-        "a closed socket must give up its hub client and with it the connection slot"
-    );
-    wired.hub.stop();
-}
 
 /// The page's browser answers pings on its own; the connection must survive
 /// well past the silence limit as proof that it did.
@@ -198,93 +173,6 @@ fn a_page_watching_a_stream_still_answers_pings_and_stays_open() {
     hub.stop();
 }
 
-/// A page that never reads must not be able to make the writer hold its frames:
-/// once a write stalls, the hub's own bounded queue fills and its overflow is
-/// what ends the connection, long before the silence limit would.
-#[test]
-fn a_page_that_never_reads_is_cut_off_by_the_hub() {
-    let Wired {
-        served,
-        link,
-        session,
-        hub,
-        page: _page,
-        ..
-    } = wired();
-
-    let finished = Arc::new(AtomicBool::new(false));
-    let flag = Arc::clone(&finished);
-    let runner = std::thread::spawn(move || {
-        run(served, link, session, Timing::default());
-        flag.store(true, Ordering::Release);
-    });
-
-    // Large frames fill the loopback socket quickly, so the writer is still
-    // stalled while the hub has a backlog to hand it.
-    let data: Arc<[u8]> = vec![b'x'; 256 * 1024].into();
-    let started = Instant::now();
-    while hub.client_count() > 0 && started.elapsed() < Duration::from_secs(5) {
-        hub.test_broadcast(TerminalFrame::Output {
-            pane: 1,
-            data: Arc::clone(&data),
-        });
-        std::thread::sleep(Duration::from_millis(1));
-    }
-
-    assert_eq!(
-        hub.client_count(),
-        0,
-        "the hub must cut off a page that stopped reading, instead of the writer buffering for it"
-    );
-    assert!(
-        started.elapsed() < Duration::from_secs(5),
-        "the overflow took longer than the whole test budget: {:?}",
-        started.elapsed()
-    );
-
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while !finished.load(Ordering::Acquire) && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert!(
-        finished.load(Ordering::Acquire),
-        "the connection did not end after the hub cut it off"
-    );
-    runner.join().expect("the connection thread panicked");
-    hub.stop();
-}
-
-/// A panic in the writer must still release the hub client and join both helper
-/// threads: `run` owns them, and an unwind never reaches the end of its loop.
-#[test]
-fn a_panicking_writer_still_releases_the_connection() {
-    let before = JOINS.load(Ordering::Relaxed);
-    let Wired {
-        served,
-        link,
-        session,
-        hub,
-        ..
-    } = wired_panicking();
-
-    let runner = std::thread::spawn(move || run(served, link, session, Timing::default()));
-    assert!(
-        runner.join().is_err(),
-        "the writer was supposed to panic, so the loop did not end"
-    );
-
-    assert_eq!(
-        hub.client_count(),
-        0,
-        "a panicking writer must still give up its hub client"
-    );
-    assert!(
-        JOINS.load(Ordering::Relaxed) >= before + 2,
-        "both helper threads must be joined on the way out"
-    );
-    hub.stop();
-}
-
 /// A page that is answering but not reading has its frames queued behind a
 /// stalled write. Closing it as silent would punish exactly the slow connection
 /// the retry beat exists for; the hub's overflow is what ends a client that
@@ -355,92 +243,6 @@ fn a_stalled_write_is_not_mistaken_for_a_silent_page() {
     runner.join().expect("the connection thread panicked");
     let _page = typing.join().expect("the typing page panicked");
     assert_eq!(hub.client_count(), 0);
-    hub.stop();
-}
-
-#[test]
-fn a_page_that_closes_its_socket_ends_the_loop_at_once() {
-    let Wired {
-        mut page,
-        served,
-        link,
-        session,
-        hub,
-        ..
-    } = wired();
-    page.close(None).expect("a close frame");
-
-    let started = Instant::now();
-    // The production timings, so nothing but the close frame can end this.
-    run(served, link, session, Timing::default());
-
-    assert!(
-        started.elapsed() < Duration::from_secs(5),
-        "a page that said goodbye was kept waiting"
-    );
-    assert_eq!(hub.client_count(), 0);
-    hub.stop();
-}
-
-/// A page that dropped its connection without a close frame: the reader sees
-/// the end and the writer must follow it, rather than wait out the silence.
-#[test]
-fn a_page_that_vanishes_without_a_close_ends_the_loop() {
-    let Wired {
-        page,
-        served,
-        link,
-        session,
-        hub,
-        ..
-    } = wired();
-    drop(page);
-
-    let started = Instant::now();
-    run(served, link, session, Timing::default());
-
-    assert!(
-        started.elapsed() < Duration::from_secs(5),
-        "a vanished page was left waiting"
-    );
-    assert_eq!(hub.client_count(), 0);
-    hub.stop();
-}
-
-/// What the hub does to a client that stops draining its queue: it shuts the
-/// socket down through the handle it was given. The connection must end on its
-/// own, releasing the hub client, without the page saying anything.
-#[test]
-fn a_connection_cut_off_by_the_hub_ends_the_loop() {
-    let Wired {
-        served,
-        link,
-        session,
-        cut_off,
-        hub,
-        page: _page,
-        ..
-    } = wired();
-    let finished = Arc::new(AtomicBool::new(false));
-    let flag = Arc::clone(&finished);
-    let runner = std::thread::spawn(move || {
-        run(served, link, session, Timing::default());
-        flag.store(true, Ordering::Release);
-    });
-
-    std::thread::sleep(Duration::from_millis(100));
-    assert!(
-        !finished.load(Ordering::Acquire),
-        "the loop ended before anything cut it off"
-    );
-    cut_off
-        .shutdown(Shutdown::Both)
-        .expect("could not cut the connection off");
-    runner.join().expect("the connection thread panicked");
-
-    // `run` joins both helper threads before it returns, so a finished runner
-    // is also the proof that neither was left behind.
-    assert_eq!(hub.client_count(), 0, "a cut-off client must be released");
     hub.stop();
 }
 
