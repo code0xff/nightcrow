@@ -142,6 +142,114 @@ fn a_row_after_an_erased_one_still_says_what_its_cells_look_like() {
     );
 }
 
+/// What each row of a snapshot spells out once its escape sequences are removed,
+/// and whether it ends by erasing the rest of the row.
+fn spelled_rows(snapshot: &[u8], rows: u16) -> Vec<(String, bool)> {
+    let text = String::from_utf8(snapshot.to_vec()).expect("a snapshot is text");
+    (0..rows)
+        .map(|row| {
+            let start = format!("\x1b[{};1H", row + 1);
+            let end = format!("\x1b[{};1H", row + 2);
+            let payload = text
+                .split(&start)
+                .nth(1)
+                .map(|rest| rest.split(&end).next().unwrap_or(rest))
+                .unwrap_or_default();
+            let mut visible = String::new();
+            let mut erased = false;
+            let mut chars = payload.chars().peekable();
+            while let Some(character) = chars.next() {
+                if character != '\u{1b}' {
+                    visible.push(character);
+                    continue;
+                }
+                match chars.next() {
+                    // A control sequence: its final byte is the last one in the
+                    // printable range, and `K` is the erase.
+                    Some('[') => {
+                        let mut last = ' ';
+                        for next in chars.by_ref() {
+                            last = next;
+                            if ('\u{40}'..='\u{7e}').contains(&next) {
+                                break;
+                            }
+                        }
+                        erased |= last == 'K';
+                    }
+                    // An OSC, which runs to `BEL` or `ESC \`.
+                    Some(']') => {
+                        let mut previous = ' ';
+                        for next in chars.by_ref() {
+                            if next == '\u{7}' || (previous == '\u{1b}' && next == '\\') {
+                                break;
+                            }
+                            previous = next;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            (visible, erased)
+        })
+        .collect()
+}
+
+/// The pen the tests above hold the predicate to is only half the contract: the
+/// snapshot has to *use* it. Read the bytes it wrote back — the cells it spelled out
+/// and where it erased — and require both to follow the default pen rather than
+/// whatever pen the emitter happened to build.
+#[test]
+fn the_snapshot_spells_exactly_the_cells_the_default_pen_calls_written() {
+    let (rows, cols) = (4u16, 12usize);
+    let mut emulator = PaneEmulator::new(rows, cols as u16, 0);
+    emulator.process(
+        concat!(
+            "\x1b[1;1Hplain",
+            "\x1b[2;1H\x1b[41mab  ",
+            "\x1b[3;1H\x1b[4m   ",
+            "\x1b[4;1H\x1b[38;5;208mx",
+        )
+        .as_bytes(),
+    );
+    let snapshot = emulator.screen_snapshot();
+    let spelled = spelled_rows(&snapshot, rows);
+    let grid = emulator.term.grid();
+    let blank = Pen::of(&Cell::default());
+
+    for row in 0..rows {
+        let last = (0..cols)
+            .rev()
+            .find(|&col| !is_blank(&grid[Point::new(Line(row as i32), Column(col))], &blank));
+        let (expected, expects_erase) = match last {
+            None => (String::new(), true),
+            Some(last) => {
+                let mut text = String::new();
+                for col in 0..=last {
+                    let cell = &grid[Point::new(Line(row as i32), Column(col))];
+                    text.push(cell.c);
+                    if let Some(zerowidth) = cell.zerowidth() {
+                        text.extend(zerowidth);
+                    }
+                }
+                (text, last + 1 < cols)
+            }
+        };
+        let (text, erased) = &spelled[row as usize];
+        assert_eq!(
+            text,
+            &expected,
+            "row {} must spell the cells the default pen calls written",
+            row + 1
+        );
+        assert_eq!(
+            *erased,
+            expects_erase,
+            "row {} must erase the rest of itself only when nothing follows",
+            row + 1
+        );
+    }
+}
+
 /// What the hoist saves at the predicate that carried it: one blank comparison per
 /// cell of a row's reverse scan, on the screen a snapshot is most expensive for.
 ///
