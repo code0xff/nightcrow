@@ -246,6 +246,17 @@ impl TerminalHub {
             .len()
     }
 
+    /// Queue a frame for every client, as a broadcast would.
+    ///
+    /// Test-only: the web connection tests need the hub to stream without a
+    /// shell producing output, so that what the writer does under backpressure
+    /// can be observed deterministically.
+    #[cfg(test)]
+    pub(crate) fn test_broadcast(&self, frame: TerminalFrame) {
+        let mut state = self.state.lock().expect("terminal state poisoned");
+        hub_helpers::broadcast_locked(&mut state.clients, frame);
+    }
+
     #[cfg(test)]
     pub(super) fn set_concurrency_test_hook(
         &self,

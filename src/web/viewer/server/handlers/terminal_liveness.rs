@@ -4,16 +4,20 @@
 //! error: half a connection stays ESTABLISHED on this side until the kernel
 //! gives up on a write. Output alone cannot settle it either, because a busy
 //! pane keeps succeeding writes into a peer that is no longer there. So the
-//! server asks, and treats silence as an answer of its own.
+//! server keeps asking, on a clock only a frame from the page resets, and
+//! treats silence as an answer of its own.
 
 use std::time::{Duration, Instant};
 
-/// Silence on the way out before the server pings the page.
+/// Silence from the page before the server pings it. Writing output does not
+/// restart this clock: a page watching a busy pane sends nothing of its own,
+/// and that is exactly the page which has to be asked.
 pub const PING_AFTER: Duration = Duration::from_secs(15);
 
-/// Silence of every kind — output, input, or an answer to a ping — before the
-/// socket is taken for dead. Two ping intervals: one missed wake-up is a
-/// throttled tab or a sleeping phone, not a page that has gone.
+/// Silence from the page — no input and no answer to a ping, with output
+/// counting as neither — before the socket is taken for dead. Two ping
+/// intervals: one missed wake-up is a throttled tab or a sleeping phone, not a
+/// page that has gone.
 pub const SILENCE_LIMIT: Duration = Duration::from_secs(30);
 
 /// The two intervals a connection's liveness turns on.
@@ -49,22 +53,17 @@ pub enum Step {
 /// The traffic clock behind one terminal socket.
 pub struct Liveness {
     timing: Timing,
-    last_outbound: Instant,
     last_inbound: Instant,
+    last_ping: Instant,
 }
 
 impl Liveness {
     pub fn new(timing: Timing, now: Instant) -> Self {
         Self {
             timing,
-            last_outbound: now,
             last_inbound: now,
+            last_ping: now,
         }
-    }
-
-    /// A frame went out, in full or into the socket's write buffer.
-    pub fn sent(&mut self, now: Instant) {
-        self.last_outbound = now;
     }
 
     /// A frame arrived: pane input, an answer to a ping, or a close.
@@ -72,11 +71,18 @@ impl Liveness {
         self.last_inbound = now;
     }
 
+    /// A ping went out, in full or into the socket's write buffer.
+    pub fn pinged(&mut self, now: Instant) {
+        self.last_ping = now;
+    }
+
     /// What the silence calls for now.
     pub fn step(&self, now: Instant) -> Step {
         if now.saturating_duration_since(self.last_inbound) >= self.timing.silence_limit {
             Step::Close
-        } else if now.saturating_duration_since(self.last_outbound) >= self.timing.ping_after {
+        } else if now.saturating_duration_since(self.last_inbound.max(self.last_ping))
+            >= self.timing.ping_after
+        {
             Step::Ping
         } else {
             Step::Wait
@@ -92,8 +98,9 @@ impl Liveness {
     /// connection that waits until here is not polling: it is asleep until
     /// something arrives or the next decision is due.
     pub fn next_deadline(&self) -> Instant {
-        (self.last_outbound + self.timing.ping_after)
-            .min(self.last_inbound + self.timing.silence_limit)
+        let ping = self.last_inbound.max(self.last_ping) + self.timing.ping_after;
+        let close = self.last_inbound + self.timing.silence_limit;
+        ping.min(close)
     }
 }
 

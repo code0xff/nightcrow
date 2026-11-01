@@ -1,4 +1,4 @@
-//! The three answers a quiet socket can produce, and when each is due.
+//! The three answers a quiet page can produce, and when each is due.
 
 use super::{Liveness, Step, Timing};
 use std::time::{Duration, Instant};
@@ -21,7 +21,7 @@ fn a_fresh_connection_has_nothing_to_answer_for() {
 /// The page answers pings on its own; asking is how a dead path gets a chance
 /// to say so before the connection is ended.
 #[test]
-fn fifteen_seconds_of_outbound_silence_asks_the_page_to_answer() {
+fn fifteen_seconds_without_a_frame_from_the_page_asks_it_to_answer() {
     let start = Instant::now();
     let liveness = Liveness::new(timing(), start);
     assert_eq!(liveness.step(start + Duration::from_secs(15)), Step::Ping);
@@ -35,7 +35,7 @@ fn a_ping_that_went_out_restarts_the_wait() {
     let mut liveness = Liveness::new(timing(), start);
     let sent_at = start + Duration::from_secs(15);
     assert_eq!(liveness.step(sent_at), Step::Ping);
-    liveness.sent(sent_at);
+    liveness.pinged(sent_at);
     assert_eq!(liveness.step(sent_at), Step::Wait);
     assert_eq!(liveness.step(sent_at + Duration::from_secs(14)), Step::Wait);
     assert_eq!(
@@ -57,11 +57,11 @@ fn any_frame_from_the_page_keeps_the_socket_alive() {
         "an answer 29 seconds in must not be treated as silence"
     );
     assert_eq!(
-        liveness.step(start + Duration::from_secs(58)),
-        Step::Ping,
-        "with nothing sent since, the server still owes the page a ping"
+        liveness.next_deadline(),
+        start + Duration::from_secs(44),
+        "the ping is due an interval after the page was last heard, not after the last write"
     );
-    liveness.sent(start + Duration::from_secs(58));
+    liveness.pinged(start + Duration::from_secs(44));
     assert_eq!(
         liveness.step(start + Duration::from_secs(59)),
         Step::Close,
@@ -85,15 +85,16 @@ fn the_deadline_is_whichever_decision_comes_first() {
     let mut quiet = Liveness::new(timing(), start);
     assert_eq!(quiet.next_deadline(), start + Duration::from_secs(15));
 
-    // An answer moves only the silence clock, so the ping is still the next
-    // thing due — and it is already overdue here.
+    // A frame from the page moves both clocks, so the ping is due a full
+    // interval after the page was last heard.
     quiet.heard(start + Duration::from_secs(20));
-    assert_eq!(quiet.next_deadline(), start + Duration::from_secs(15));
+    assert_eq!(quiet.next_deadline(), start + Duration::from_secs(35));
 
-    quiet.sent(start + Duration::from_secs(20));
+    // A ping later than the last inbound frame moves only the ping clock.
+    quiet.pinged(start + Duration::from_secs(36));
     assert_eq!(
         quiet.next_deadline(),
-        start + Duration::from_secs(35),
-        "after a ping and an answer, both clocks have moved"
+        start + Duration::from_secs(50),
+        "the silence limit can be the nearer decision"
     );
 }

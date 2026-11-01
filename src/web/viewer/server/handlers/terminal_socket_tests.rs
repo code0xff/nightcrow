@@ -4,6 +4,7 @@ use super::super::terminal_connection::{WAKES, run};
 use super::super::terminal_liveness::Timing;
 use super::super::terminal_pipe::{GUARD_WAKES, READ_GUARD};
 use super::fixture::{Wired, short, wired, wired_with};
+use crate::session::terminal::TerminalFrame;
 use std::net::Shutdown;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -119,6 +120,80 @@ fn ordinary_input_keeps_the_socket_open() {
     assert!(
         elapsed >= Duration::from_millis(700),
         "input did not count as the page still being there: {elapsed:?}"
+    );
+    hub.stop();
+}
+
+/// A page watching a busy pane sends nothing of its own: no typing, no input,
+/// only the pongs it answers automatically. If output postpones the ping, such
+/// a page never gets asked, never answers, and is closed as silent on every
+/// silence limit — replaying every pane for a tab that was there all along.
+#[test]
+fn a_page_watching_a_stream_still_answers_pings_and_stays_open() {
+    let Wired {
+        mut page,
+        served,
+        link,
+        session,
+        hub,
+        ..
+    } = wired();
+
+    let reading = std::thread::spawn(move || {
+        let until = Instant::now() + Duration::from_millis(900);
+        while Instant::now() < until {
+            match page.read() {
+                Ok(Message::Ping(payload)) => {
+                    if page.send(Message::Pong(payload)).is_err() {
+                        return;
+                    }
+                }
+                Ok(Message::Close(_)) => return,
+                Ok(_) => {}
+                Err(tungstenite::Error::Io(err))
+                    if matches!(
+                        err.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) => {}
+                Err(_) => return,
+            }
+        }
+        let _ = page.close(None);
+    });
+
+    let streaming = {
+        let hub = Arc::clone(&hub);
+        std::thread::spawn(move || {
+            let data: Arc<[u8]> = b"streaming output".to_vec().into();
+            let until = Instant::now() + Duration::from_millis(900);
+            while Instant::now() < until {
+                hub.test_broadcast(TerminalFrame::Output {
+                    pane: 1,
+                    data: Arc::clone(&data),
+                });
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        })
+    };
+
+    let started = Instant::now();
+    run(served, link, session, short());
+    let elapsed = started.elapsed();
+    reading.join().expect("the reading page panicked");
+    streaming.join().expect("the streaming thread panicked");
+
+    assert!(
+        elapsed >= Duration::from_millis(800),
+        "output alone left the page unpinged, so it was closed as silent: {elapsed:?}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "the loop did not notice the page leaving: {elapsed:?}"
+    );
+    assert_eq!(
+        hub.client_count(),
+        0,
+        "a page that left must give up its hub client"
     );
     hub.stop();
 }

@@ -208,14 +208,12 @@ impl Connection {
         let len = message.len();
         match self.ws.write(message) {
             Ok(()) => {
-                self.liveness.sent(Instant::now());
                 self.batch.add(len);
                 None
             }
             // tungstenite buffered the frame and will try again on the next
-            // flush; record the traffic and let the retry beat move it.
+            // flush; let the retry beat move it.
             Err(err) if stalled_not_gone(&err) => {
-                self.liveness.sent(Instant::now());
                 self.batch.add(len);
                 self.unflushed = true;
                 None
@@ -244,11 +242,11 @@ impl Connection {
         match self.ws.write(Message::Ping(Vec::new().into())) {
             Ok(()) => {
                 let end = self.flush();
-                self.liveness.sent(now);
+                self.liveness.pinged(now);
                 end
             }
             Err(err) if stalled_not_gone(&err) => {
-                self.liveness.sent(now);
+                self.liveness.pinged(now);
                 self.unflushed = true;
                 None
             }
