@@ -109,7 +109,7 @@ impl Desk {
         self.now += TICK;
     }
 
-    fn elapsed(&self) -> Duration {
+    pub(super) fn elapsed(&self) -> Duration {
         self.now.saturating_duration_since(self.origin)
     }
 }

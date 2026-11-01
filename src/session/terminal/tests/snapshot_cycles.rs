@@ -8,6 +8,7 @@
 //! these paths still rebuild the live screen.
 
 use super::snapshot_throttle::{Desk, ENTER, assert_replay_matches_live, frame};
+use crate::session::limits::MAX_TERMINAL_SCROLLBACK_BYTES;
 
 /// The normal screen under the program is recorded, spent, frozen and spent again
 /// as the program comes and goes. Every step of that must rebuild the live screen,
@@ -79,5 +80,62 @@ fn a_torn_chunk_is_replayed_raw_until_a_tick_takes_the_screen() {
         desk.tick();
     }
     assert_replay_matches_live(&desk);
+    desk.hub.stop();
+}
+
+/// One chunk of a stream the fixtures would never pick: a repaint, a long run of
+/// filler, or a lone escape introducer that leaves the next chunk inside a
+/// sequence. Fixed seed, so a failure reproduces.
+fn next_chunk(state: &mut u64, n: usize) -> Vec<u8> {
+    *state ^= *state << 13;
+    *state ^= *state >> 7;
+    *state ^= *state << 17;
+    match *state % 16 {
+        0..=9 => format!("\x1b[2;1Hframe {n:06}\x1b[K").into_bytes(),
+        10..=13 => vec![b'.'; 64 + (*state as usize % 4096)],
+        14 => b"\x1b[".to_vec(),
+        _ => b"\x1b[3;1H\x1b[K".to_vec(),
+    }
+}
+
+/// Chunk sizes and tick spacing the hand-written fixtures do not reach, with the
+/// replay compared against the live screen every few ticks. Also the pace's own
+/// promise: a snapshot after the first needs either a whole window or another owed
+/// cap of output, so the count cannot creep back toward one per tick.
+#[test]
+fn any_chunking_keeps_the_replay_exact_and_the_snapshot_rate_bounded() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let mut desk = Desk::new(&dir);
+    desk.output(ENTER);
+    desk.tick();
+    let mut written = ENTER.len();
+    let mut state = 0x9e37_79b9_7f4a_7c15u64;
+
+    for tick in 0..400 {
+        for n in 0..=tick % 3 {
+            let chunk = next_chunk(&mut state, written + n);
+            written += chunk.len();
+            desk.output(&chunk);
+        }
+        desk.tick();
+        if tick % 50 == 0 {
+            assert_replay_matches_live(&desk);
+        }
+    }
+    assert_replay_matches_live(&desk);
+
+    let elapsed_ms = desk.elapsed().as_millis() as u64;
+    let windows = elapsed_ms / 500;
+    let caps = written as u64 / (64 * 1024);
+    assert!(
+        desk.snapshots as u64 <= windows + caps + 2,
+        "{} paced snapshots in {elapsed_ms} ms over {written} bytes: more than {windows} \
+         windows and {caps} owed caps allow",
+        desk.snapshots
+    );
+    assert!(
+        written > MAX_TERMINAL_SCROLLBACK_BYTES,
+        "the stream must be long enough to cross the crowded cap"
+    );
     desk.hub.stop();
 }
