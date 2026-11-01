@@ -207,6 +207,21 @@ fn rows_are_reused_until_the_expansion_changes() {
 }
 
 #[test]
+fn rows_invalidate_when_a_directory_collapses() {
+    let mut tv = sample();
+    tv.expanded_mut().insert("src".to_string());
+    let expanded = tv.rows();
+    assert_eq!(expanded.len(), 3);
+
+    tv.expanded_mut().remove("src");
+    let collapsed = tv.rows();
+
+    assert!(!Arc::ptr_eq(&expanded, &collapsed));
+    assert_eq!(collapsed.len(), 2);
+    assert_eq!(collapsed[0].path, "src");
+}
+
+#[test]
 fn rows_invalidate_when_cached_children_change() {
     let mut tv = sample();
     let first = tv.rows();
