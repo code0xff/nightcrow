@@ -63,6 +63,9 @@ pub(super) enum ConcurrencyTestPoint {
     ResizeBroadcastComplete,
     DisconnectStateAcquired,
     DisconnectStateContended,
+    /// Taken after `connect` has snapshotted a replay and released the hub
+    /// state lock, before it frames or queues any of it.
+    ReplayFraming,
 }
 
 #[cfg(test)]

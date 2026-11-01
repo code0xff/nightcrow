@@ -5,8 +5,14 @@
 use super::frame::{ServerMessage, TerminalFrame};
 use super::hub_helpers::PaneState;
 use crate::backend::PaneId;
+use std::collections::VecDeque;
+use std::ops::Range;
 use std::sync::Arc;
 use std::sync::mpsc::SyncSender;
+
+#[cfg(test)]
+#[path = "hub_replay_bench_tests.rs"]
+mod bench;
 
 /// Initial replay frames are bounded independently from the one frame that
 /// announces the replay boundary. `connect` reserves that final queue slot.
@@ -47,9 +53,9 @@ const LEAVE_ALT_SCREEN: &[u8] = b"\x1b[?1049l";
 /// ended the attach connection on every reconnect. 1 MiB stays well under that
 /// ceiling while keeping the frame count low enough that a whole replay of the
 /// largest panes this hub allows fits in
-/// [`CLIENT_QUEUE_DEPTH`](super::CLIENT_QUEUE_DEPTH) — which is what makes it
-/// safe to queue the replay before the client is registered. The completion
-/// marker has one additional reserved slot in the channel.
+/// [`CLIENT_QUEUE_DEPTH`](super::CLIENT_QUEUE_DEPTH) — which is what lets the
+/// whole replay be queued in one go, with the client's live frames held behind
+/// it. The completion marker has one additional reserved slot in the channel.
 pub(super) const REPLAY_CHUNK_BYTES: usize = 1024 * 1024;
 
 /// Queue `data` for `pane` as frames no larger than [`REPLAY_CHUNK_BYTES`],
@@ -72,32 +78,95 @@ fn send_replay(queue: &mut ReplayQueue<'_>, pane: PaneId, data: &[u8]) -> bool {
 /// the screen arrives whole), then everything recorded since the snapshot was
 /// taken. A pane with no snapshot yet has `covered == 0` and an empty
 /// `normal_screen`, which makes this the plain ring.
+fn push_normal_record(data: &mut Vec<u8>, pane: &PaneState) {
+    push_ring(data, &pane.scrollback, 0..pane.covered);
+    data.extend_from_slice(&pane.normal_screen);
+    push_ring(data, &pane.scrollback, pane.covered..pane.scrollback.len());
+}
+
 fn normal_record(pane: &PaneState) -> Vec<u8> {
     let mut data = Vec::with_capacity(pane.scrollback.len() + pane.normal_screen.len());
-    data.extend(pane.scrollback.iter().copied().take(pane.covered));
-    data.extend_from_slice(&pane.normal_screen);
-    data.extend(pane.scrollback.iter().copied().skip(pane.covered));
+    push_normal_record(&mut data, pane);
     data
 }
 
-/// Announce `pane` to an attaching client and put its screen in front of it: the
-/// modes its program established, and then whichever record holds that program's
-/// screen (see [`PaneState`](super::hub_helpers::PaneState)).
+/// Append `range` of a deque's bytes, in one copy per contiguous slice.
+fn push_ring(data: &mut Vec<u8>, ring: &VecDeque<u8>, range: Range<usize>) {
+    let (front, back) = ring.as_slices();
+    let start = range.start.min(ring.len());
+    let end = range.end.min(ring.len()).max(start);
+    if start < front.len() {
+        data.extend_from_slice(&front[start..end.min(front.len())]);
+    }
+    if end > front.len() {
+        let skipped = start.saturating_sub(front.len());
+        data.extend_from_slice(&back[skipped..end - front.len()]);
+    }
+}
+
+/// One pane's replay, captured under the hub's state lock so the copies are made
+/// once and the framing can happen after the lock is released.
+pub(super) struct PaneReplay {
+    pub(super) pane: PaneId,
+    rows: u16,
+    cols: u16,
+    title: Option<String>,
+    /// The normal record to put on the normal buffer first, for a pane whose
+    /// program has left it (see [`replay_pane`]).
+    normal_under: Option<Vec<u8>>,
+    prelude: Vec<u8>,
+    record: Vec<u8>,
+}
+
+impl PaneReplay {
+    pub(super) fn capture(pane: &PaneState) -> Self {
+        let normal_under = (pane.modes.alt_screen
+            && !(pane.scrollback.is_empty() && pane.normal_screen.is_empty()))
+        .then(|| {
+            let mut data = Vec::with_capacity(
+                LEAVE_ALT_SCREEN.len() + pane.scrollback.len() + pane.normal_screen.len(),
+            );
+            data.extend_from_slice(LEAVE_ALT_SCREEN);
+            push_normal_record(&mut data, pane);
+            data
+        });
+        let record = if pane.modes.alt_screen {
+            let mut data = Vec::with_capacity(pane.screen.len() + pane.since.len());
+            data.extend_from_slice(&pane.screen);
+            push_ring(&mut data, &pane.since, 0..pane.since.len());
+            data
+        } else {
+            normal_record(pane)
+        };
+        Self {
+            pane: pane.id,
+            rows: pane.rows,
+            cols: pane.cols,
+            title: pane.title.clone(),
+            normal_under,
+            prelude: pane.modes.prelude(),
+            record,
+        }
+    }
+}
+
+/// Announce a captured pane to an attaching client and put its screen in front
+/// of it: the modes its program established, and then whichever record holds that
+/// program's screen (see [`PaneState`](super::hub_helpers::PaneState)).
 ///
-/// Frames go straight onto the client's queue rather than through a broadcast:
-/// this runs while the caller holds the state lock, before the client is eligible
-/// for broadcasts at all (see [`TerminalHub::connect`](super::TerminalHub::connect)).
+/// Runs after [`TerminalHub::connect`](super::TerminalHub::connect) has released
+/// the hub state lock; the client's replay gate keeps live frames behind these.
 ///
 /// Reports whether the whole pane reached the queue. A client that was handed only
 /// part of a screen has no way to tell, so the caller says so where someone can
 /// read it.
-pub(super) fn replay_pane(queue: &mut ReplayQueue<'_>, pane: &PaneState) -> bool {
+pub(super) fn replay_pane(queue: &mut ReplayQueue<'_>, replay: &PaneReplay) -> bool {
     let mut whole = true;
     if let Ok(json) = serde_json::to_string(&ServerMessage::Created {
-        pane: pane.id,
-        rows: pane.rows,
-        cols: pane.cols,
-        title: pane.title.clone(),
+        pane: replay.pane,
+        rows: replay.rows,
+        cols: replay.cols,
+        title: replay.title.clone(),
         // A replayed pane predates this client, so nobody here asked for it — it
         // must not take the focus of whatever the client is already looking at.
         client: None,
@@ -110,11 +179,8 @@ pub(super) fn replay_pane(queue: &mut ReplayQueue<'_>, pane: &PaneState) -> bool
     // full-screen program left a client that attached during it looking at a blank
     // screen. Explicitly on the normal buffer, because the prelude below is what
     // switches off it.
-    if pane.modes.alt_screen && !(pane.scrollback.is_empty() && pane.normal_screen.is_empty()) {
-        let mut data = Vec::with_capacity(LEAVE_ALT_SCREEN.len() + pane.scrollback.len());
-        data.extend_from_slice(LEAVE_ALT_SCREEN);
-        data.extend(normal_record(pane));
-        whole &= send_replay(queue, pane.id, &data);
+    if let Some(data) = &replay.normal_under {
+        whole &= send_replay(queue, replay.pane, data);
     }
     // Ahead of the screen: these are the modes the pane's program set once, at
     // startup, and no record of them survives in what follows. Without this a
@@ -122,21 +188,13 @@ pub(super) fn replay_pane(queue: &mut ReplayQueue<'_>, pane: &PaneState) -> bool
     // reporting off, arrows in the wrong encoding, paste unbracketed. It
     // leads with `1049`, so it is also what puts the client on the buffer the
     // program is drawing on before that buffer's contents arrive.
-    whole &= send_replay(queue, pane.id, &pane.modes.prelude());
-    let data: Vec<u8> = if pane.modes.alt_screen {
-        // The screen, then everything broadcast since it was taken — the same
-        // bytes every client already attached has seen. (When an entry
-        // snapshot was deferred, `since` opens with the switch chunk itself,
-        // whose pre-switch text plays on the wrong buffer until the next
-        // paint covers it — the price of never splicing into an open
-        // sequence.)
-        let mut data = Vec::with_capacity(pane.screen.len() + pane.since.len());
-        data.extend_from_slice(&pane.screen);
-        data.extend(pane.since.iter().copied());
-        data
-    } else {
-        normal_record(pane)
-    };
-    whole &= send_replay(queue, pane.id, &data);
+    whole &= send_replay(queue, replay.pane, &replay.prelude);
+    // For an alternate-screen pane the record is its screen, then everything
+    // broadcast since it was taken — the same bytes every client already attached
+    // has seen. (When an entry snapshot was deferred, `since` opens with the
+    // switch chunk itself, whose pre-switch text plays on the wrong buffer until
+    // the next paint covers it — the price of never splicing into an open
+    // sequence.)
+    whole &= send_replay(queue, replay.pane, &replay.record);
     whole
 }

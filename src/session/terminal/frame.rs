@@ -145,9 +145,9 @@ pub enum ServerMessage {
     Hello {
         client: u64,
         /// How many `Created` frames the replay is about to deliver. Exact,
-        /// because `connect` queues the whole replay under the hub's lock and
-        /// only registers the client afterwards — a client that knows the
-        /// count can lay its grid out for the panes it is *going* to have.
+        /// because `connect` snapshots the pane set under the hub's lock — a
+        /// client that knows the count can lay its grid out for the panes it is
+        /// *going* to have.
         panes: usize,
     },
     /// The initial connection replay has ended. Queued after `Hello`, zoom,

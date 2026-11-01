@@ -13,8 +13,9 @@ fn subscriber(id: u64) -> (Client, Receiver<TerminalFrame>) {
         Client {
             id,
             tx,
+            replay_held: None,
             socket: None,
-            connection: id,
+            connection: Some(id),
         },
         rx,
     )

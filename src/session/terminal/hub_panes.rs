@@ -7,7 +7,7 @@
 
 use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
-use super::hub_helpers::{PaneState, broadcast_locked, push_scrollback};
+use super::hub_helpers::{PaneState, broadcast_locked, push_scrollback, queue_locked};
 use super::hub_modes::Observed;
 use super::hub_zoom::clear_zoom_locked;
 use crate::backend::PaneId;
@@ -237,12 +237,8 @@ impl TerminalHub {
         };
         let mut state = self.state.lock().expect("terminal state poisoned");
         if let Some(index) = state.clients.iter().position(|c| c.id == client_id)
-            && state.clients[index]
-                .tx
-                .try_send(TerminalFrame::Control(json))
-                .is_err()
+            && !queue_locked(&mut state.clients[index], TerminalFrame::Control(json))
         {
-            state.clients[index].cut_off();
             state.clients.remove(index);
         }
     }
