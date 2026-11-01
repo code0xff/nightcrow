@@ -7,7 +7,7 @@
 //! their exact edges, pin the verdict the worker's loop acts on, and measure what
 //! the pace saves.
 
-use super::snapshot_throttle::{
+use super::snapshot_desk::{
     COLS, Desk, ENTER, PANE, ROWS, TICK, assert_replay_matches_live, frame,
 };
 use crate::session::limits::MAX_TERMINAL_SCROLLBACK_BYTES;

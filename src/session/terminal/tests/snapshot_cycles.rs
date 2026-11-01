@@ -7,8 +7,15 @@
 //! be replayed raw — so the pace lengthening that tail is only safe if exactly
 //! these paths still rebuild the live screen.
 
-use super::snapshot_throttle::{Desk, ENTER, assert_replay_matches_live, frame, replay_stream};
+use super::snapshot_desk::{
+    Desk, ENTER, assert_replay_matches_live, assert_replay_settles_to_live, frame, replay_stream,
+};
 use crate::session::limits::MAX_TERMINAL_SCROLLBACK_BYTES;
+use std::time::{Duration, Instant};
+
+/// Past the 150 ms window the emulator arms on a synchronized update opening, so a
+/// test can reach an expired one without sleeping through it.
+const PAST_SYNC_WINDOW: Duration = Duration::from_millis(200);
 
 /// The normal screen under the program is recorded, spent, frozen and spent again
 /// as the program comes and goes. Every step of that must rebuild the live screen,
@@ -47,6 +54,40 @@ fn a_pane_that_leaves_and_returns_to_the_alternate_screen_still_replays_exactly(
     }
     desk.tick();
     assert_replay_matches_live(&desk);
+    desk.hub.stop();
+}
+
+/// A program killed inside a synchronized update that was carrying the switch to
+/// the alternate screen. The clock applies it, and the record was told about the
+/// switch only afterwards — its bytes went into the normal record, which is what a
+/// replay carries them from. The pace may still defer the alternate screen itself,
+/// so the client ends the update on its own clock and must land on the live screen.
+#[test]
+fn a_settled_switch_to_the_alternate_screen_replays_once_the_client_settles_too() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let mut desk = Desk::new(&dir);
+
+    desk.output(ENTER);
+    desk.tick();
+    desk.output(b"\x1b[?1049lbye");
+    desk.tick();
+    // Opened and never closed: the switch and the paint are held, and the record
+    // files them against the normal screen.
+    desk.output(b"\x1b[?2026h\x1b[?1049h\x1b[2J\x1b[3;1HPAINTED");
+    desk.tick();
+
+    desk.settle_sync(Instant::now() + PAST_SYNC_WINDOW);
+    // Inside the window, so the pass leaves the missing alternate screen for later.
+    desk.tick();
+    assert_replay_settles_to_live(&desk);
+
+    // Once the window passes the record carries that screen itself, and every later
+    // replay still settles where the live pane is.
+    for n in 0..63 {
+        desk.output(&frame(n));
+        desk.tick();
+    }
+    assert_replay_settles_to_live(&desk);
     desk.hub.stop();
 }
 

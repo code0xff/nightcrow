@@ -24,6 +24,7 @@ mod scrollback_depth;
 mod size_owner;
 mod size_owner_resize_race;
 mod snapshot_cycles;
+mod snapshot_desk;
 mod snapshot_pace;
 mod snapshot_throttle;
 mod startup;
