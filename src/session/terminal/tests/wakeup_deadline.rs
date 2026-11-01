@@ -64,13 +64,14 @@ fn owned_verdict(frame: &TerminalFrame) -> Option<bool> {
     value["owned"].as_bool()
 }
 
-/// A burst larger than the 256-event output queue, then a marker, then the end of
-/// the child. The reader is blocked on a full queue while the worker drains, so
-/// when it goes quiet the queue is still full and the events behind one pass's
-/// budget have no further signal to bring the worker back.
+/// A burst larger than one drain window's budget, then a marker, then the end of
+/// the child. Once the reader goes quiet, the events behind the window's budget
+/// have no further signal to bring the worker back. Kept small on Unix: macOS
+/// hands PTY output over in small chunks, and a debug build there moves a larger
+/// burst too slowly for the deadline.
 #[cfg(unix)]
 const BURST_THEN_MARKER: &str =
-    "head -c 2097152 /dev/zero | tr '\\0' 'x'; printf 'nightcrow-burst-done'";
+    "head -c 524288 /dev/zero | tr '\\0' 'x'; printf 'nightcrow-burst-done'";
 #[cfg(windows)]
 const BURST_THEN_MARKER: &str = concat!(
     "$out=[Console]::OpenStandardOutput(); ",
