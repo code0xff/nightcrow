@@ -1,4 +1,8 @@
+use super::rotation::{epoch_secs, expired_log_paths, is_nightcrow_log_file};
 use super::*;
+use std::fs::OpenOptions;
+use std::io::{self, Write};
+use std::time::{Duration, SystemTime};
 use tempfile::tempdir;
 
 #[test]
