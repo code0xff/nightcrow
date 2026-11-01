@@ -30,46 +30,15 @@ mod snapshot_pty_windows;
 mod snapshot_throttle;
 mod startup;
 mod startup_policy;
+mod waiting;
 mod wire;
 mod zoom;
 
 use crate::backend::PaneId;
 use crate::session::terminal::frame::TerminalFrame;
-use std::thread;
-use std::time::{Duration, Instant};
 
 use super::TerminalSession;
-
-/// Deadline for the real-shell tests below. `connect` spawns the user's
-/// actual `$SHELL` (an interactive zsh sources its full rc chain), and
-/// cargo runs tests in parallel, so several shells initialize at once — a
-/// tighter budget was measurably flaky under load. A generous bound only
-/// delays the failure verdict; passing runs still finish the instant the
-/// frame arrives. Mirrors `backend::pty::tests::PTY_TEST_DEADLINE`.
-pub(super) const SHELL_TEST_DEADLINE: Duration = Duration::from_secs(15);
-
-pub(super) fn wait_for<T>(mut take: impl FnMut() -> Option<T>) -> Option<T> {
-    let deadline = Instant::now() + SHELL_TEST_DEADLINE;
-    while Instant::now() < deadline {
-        if let Some(value) = take() {
-            return Some(value);
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-    None
-}
-
-/// Pull frames until one satisfies `want`, ignoring the rest.
-pub(super) fn next_matching(
-    session: &TerminalSession,
-    mut want: impl FnMut(&TerminalFrame) -> bool,
-) -> Option<TerminalFrame> {
-    wait_for(|| {
-        session
-            .next_frame(Duration::from_millis(50))
-            .filter(|f| want(f))
-    })
-}
+pub(super) use waiting::{SHELL_TEST_DEADLINE, next_matching, wait_for};
 
 pub(super) fn created_pane(frame: &TerminalFrame) -> Option<PaneId> {
     let TerminalFrame::Control(json) = frame else {
