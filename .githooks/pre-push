@@ -37,6 +37,11 @@
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
+# Git exports the repository location to hooks. In a linked worktree GIT_DIR is
+# absolute, so tests that run `git` inside their own temporary repositories would
+# operate on this checkout instead. Discovery from the working directory finds the
+# same repository for the hook's own git commands.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR
 
 # The branch contributions are ultimately integrated into. `upstream` wins when
 # it exists: in a fork, `origin` is a staging area and `upstream` is the thing a
