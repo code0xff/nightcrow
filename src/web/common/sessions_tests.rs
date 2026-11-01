@@ -91,10 +91,10 @@ fn writing_forgets_a_token_that_expired_while_the_daemon_ran() {
     // A session nobody asks about again: the browser holding that cookie never
     // came back, so no `is_valid` call will ever reach this token.
     let stale = "stale-token";
-    store.tokens.lock().unwrap().insert(
-        stale.to_string(),
-        Some(SystemTime::now() - Duration::from_secs(1)),
-    );
+    store.tokens.lock().unwrap().push(Token {
+        value: stale.to_string(),
+        expiry: Some(SystemTime::now() - Duration::from_secs(1)),
+    });
     let live = store.issue().unwrap();
 
     let data = std::fs::read_to_string(&path).unwrap();
@@ -110,30 +110,18 @@ fn writing_forgets_a_token_that_expired_while_the_daemon_ran() {
 #[test]
 fn a_store_without_a_file_forgets_expired_tokens_too() {
     // The fallback when the state directory cannot be opened. It keeps the same
-    // map, and nothing restarts into a swept file to correct it.
+    // list, and nothing restarts into a swept file to correct it.
     let store = SessionStore::new(a_day());
-    store.tokens.lock().unwrap().insert(
-        "stale-token".to_string(),
-        Some(SystemTime::now() - Duration::from_secs(1)),
-    );
+    store.tokens.lock().unwrap().push(Token {
+        value: "stale-token".to_string(),
+        expiry: Some(SystemTime::now() - Duration::from_secs(1)),
+    });
     let live = store.issue().unwrap();
+    let tokens = store.tokens.lock().unwrap();
     assert_eq!(
-        store.tokens.lock().unwrap().keys().collect::<Vec<_>>(),
+        tokens.iter().map(|t| &t.value).collect::<Vec<_>>(),
         vec![&live]
     );
-}
-
-#[test]
-fn sweeping_keeps_what_is_still_live() {
-    let now = SystemTime::now();
-    let mut tokens = HashMap::from([
-        ("past".to_string(), Some(now - Duration::from_secs(1))),
-        // Expiry is not "still live": `is_valid` demands strictly later.
-        ("exactly-now".to_string(), Some(now)),
-        ("future".to_string(), Some(now + Duration::from_secs(1))),
-    ]);
-    sweep(&mut tokens, now);
-    assert_eq!(tokens.keys().collect::<Vec<_>>(), vec!["future"]);
 }
 
 #[test]
@@ -159,7 +147,10 @@ fn a_nonsense_expiry_does_not_stop_the_server_from_starting() {
 fn a_store_without_a_lifetime_issues_tokens_that_outlive_every_sweep() {
     let store = SessionStore::new(None);
     let token = store.issue().unwrap();
-    assert_eq!(store.tokens.lock().unwrap().get(&token), Some(&None));
+    assert_eq!(
+        store.tokens.lock().unwrap().first().map(|t| t.expiry),
+        Some(None)
+    );
 
     // Far enough ahead that any finite lifetime would have run out.
     let mut tokens = store.tokens.lock().unwrap();
@@ -167,7 +158,7 @@ fn a_store_without_a_lifetime_issues_tokens_that_outlive_every_sweep() {
         &mut tokens,
         SystemTime::now() + Duration::from_secs(400 * 86400),
     );
-    assert!(tokens.contains_key(&token));
+    assert!(tokens.iter().any(|t| t.value == token));
     drop(tokens);
 
     assert!(store.is_valid(&token));
@@ -198,10 +189,10 @@ fn tightening_the_lifetime_cuts_tokens_that_outlast_it_short() {
         let store = SessionStore::load(path.clone(), None);
         let immortal = store.issue().unwrap();
         let long = "long-lived".to_string();
-        store.tokens.lock().unwrap().insert(
-            long.clone(),
-            Some(SystemTime::now() + Duration::from_secs(10 * 86400)),
-        );
+        store.tokens.lock().unwrap().push(Token {
+            value: long.clone(),
+            expiry: Some(SystemTime::now() + Duration::from_secs(10 * 86400)),
+        });
         store.persist();
         (immortal, long)
     };
@@ -212,7 +203,12 @@ fn tightening_the_lifetime_cuts_tokens_that_outlast_it_short() {
     let ceiling = SystemTime::now() + hour;
     let tokens = store.tokens.lock().unwrap();
     for token in [&immortal, &long] {
-        let expiry = tokens.get(token).unwrap().expect("no longer immortal");
+        let expiry = tokens
+            .iter()
+            .find(|t| t.value.as_str() == token.as_str())
+            .unwrap()
+            .expiry
+            .expect("no longer immortal");
         assert!(
             expiry <= ceiling,
             "{token} still outlasts the tightened lifetime"
@@ -247,7 +243,14 @@ fn a_tightened_lifetime_reaches_the_file_before_the_next_login_does() {
     // A second restart measures from what is written, not from scratch.
     let ceiling = SystemTime::now() + hour;
     let store = SessionStore::load(path.clone(), Some(hour));
-    assert!(store.tokens.lock().unwrap()[&token].unwrap() <= ceiling);
+    let tokens = store.tokens.lock().unwrap();
+    let expiry = tokens
+        .iter()
+        .find(|t| t.value == token)
+        .unwrap()
+        .expiry
+        .unwrap();
+    assert!(expiry <= ceiling);
     let _ = std::fs::remove_file(&path);
 }
 
@@ -259,7 +262,13 @@ fn a_restart_never_extends_a_token_that_is_nearly_out() {
     std::fs::write(&path, format!("nearly\t{secs}\n")).unwrap();
 
     let store = SessionStore::load(path.clone(), Some(Duration::from_secs(86400)));
-    let expiry = store.tokens.lock().unwrap()["nearly"].unwrap();
+    let tokens = store.tokens.lock().unwrap();
+    let expiry = tokens
+        .iter()
+        .find(|t| t.value == "nearly")
+        .unwrap()
+        .expiry
+        .unwrap();
     assert!(
         expiry <= nearly,
         "a longer configured lifetime must not push an existing deadline out"
