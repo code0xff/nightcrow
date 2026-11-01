@@ -5,6 +5,7 @@ mod attention;
 mod backpressure;
 mod behavior;
 mod broadcast;
+mod drain_pacing;
 mod frames;
 mod identity;
 mod modes;

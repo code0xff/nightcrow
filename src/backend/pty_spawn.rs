@@ -177,6 +177,7 @@ impl PtyBackend {
                 #[cfg(test)]
                 output_backpressured,
                 exit: ExitPhase::Running,
+                window: None,
             },
         );
         self.slots.insert(id, identity, launch, Instant::now());

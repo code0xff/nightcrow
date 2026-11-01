@@ -2,7 +2,8 @@
 //! for the next pass.
 
 use super::{
-    BackendEvent, EXIT_DRAIN_GRACE, ExitPhase, PER_PANE_DRAIN_BUDGET, PtyBackend, PtyEvent,
+    BackendEvent, DrainWindow, EXIT_DRAIN_GRACE, ExitPhase, PER_PANE_DRAIN_BUDGET, PtyBackend,
+    PtyEvent,
 };
 use std::time::Instant;
 
@@ -23,15 +24,31 @@ impl PtyBackend {
         // Each pane is drained up to the budget so one noisy pane (e.g.
         // `yes | head -100000`) cannot starve its siblings within a frame.
         // Spending the budget leaves events queued, and the reader's signal for
-        // them was consumed by the pass that got here, so the backend asks its
-        // owner back at once (see `next_deadline`).
+        // them was consumed by the pass that got here. A woken owner is asked back
+        // once the pane's drain window ends (see `next_deadline`); a polling owner
+        // comes back on its own tick.
         // Ahead of any output: a pane has to exist before bytes can be routed to
         // it, and both can be queued before the same drain.
         let mut events: Vec<BackendEvent> = std::mem::take(&mut self.created);
         let now = Instant::now();
-        let mut backlog = false;
+        let paced = self.waker.is_some();
         for (id, pane) in &mut self.panes {
             let mut budget = PER_PANE_DRAIN_BUDGET;
+            if paced {
+                let window = match pane.window {
+                    Some(window) if now < window.end() => window,
+                    _ => DrainWindow {
+                        start: now,
+                        used: 0,
+                    },
+                };
+                pane.window = Some(window);
+                budget -= window.used;
+                if budget == 0 {
+                    continue;
+                }
+            }
+            let allowed = budget;
             while budget > 0 {
                 match pane
                     .rx
@@ -73,13 +90,10 @@ impl PtyBackend {
                 }
                 budget -= 1;
             }
-            // A budget of zero means the pane was never seen dry: whether the
-            // queue still holds something or not, the next pass has to look.
-            if budget == 0 {
-                backlog = true;
+            if let Some(window) = pane.window.as_mut() {
+                window.used += allowed - budget;
             }
         }
-        self.drain_backlog = backlog;
         events
     }
 }

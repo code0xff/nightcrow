@@ -227,9 +227,9 @@ impl TerminalHub {
             // A pass that left work undone — a command a full queue refused, a
             // plugin that filled its per-tick budget — was signalled by whoever
             // produced it, so the pending flag brings the next pass at once. A PTY
-            // burst past one pass's drain budget is the exception: its reader's
-            // signal was consumed by the pass that spent the budget, so the backlog
-            // is a deadline due immediately. Everything else is on a clock.
+            // pane that spent its drain window's budget is the exception: its
+            // reader's signal was consumed by an earlier pass, so the backlog is a
+            // deadline at the window's end. Everything else is on a clock.
             #[cfg(test)]
             let legacy_polling = self.probe.legacy_polling.load(Ordering::Acquire);
             #[cfg(not(test))]

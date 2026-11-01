@@ -31,6 +31,7 @@ fn dropping_a_pane_does_not_wait_out_its_workers_reap_window() {
         wait_handle: Some(waiter),
         output_backpressured: Arc::new(AtomicBool::new(false)),
         exit: ExitPhase::Running,
+        window: None,
     };
 
     let start = Instant::now();
