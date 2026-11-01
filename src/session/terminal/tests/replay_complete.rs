@@ -239,3 +239,48 @@ fn a_replay_chunk_is_a_frame_the_daemon_socket_still_accepts() {
         "the frame is the chunk plus its kind byte and length prefix"
     );
 }
+
+/// The fill writes straight into uninitialized allocations and only turns them into
+/// bytes once the whole record is in, so a schedule that assumes one write per chunk
+/// would be unsound rather than merely wrong. The fixed sizes above pin the cases a
+/// boundary test thinks of; walk a deterministic pseudo-random schedule as well, since
+/// the ring hands over whatever runs its two slices happen to give.
+#[test]
+fn replay_chunks_fill_under_any_write_schedule() {
+    let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+    let mut below = |bound: usize| {
+        seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        usize::try_from(seed >> 33).unwrap_or(0) % bound.max(1)
+    };
+
+    for _ in 0..48 {
+        let total = below(2 * REPLAY_CHUNK_BYTES + 64);
+        let bytes: Vec<u8> = (0..total).map(|index| (index % 251) as u8).collect();
+        let mut chunks = Chunks::new(total);
+        let mut written = 0;
+        while written < total {
+            // A schedule of 0..=4095-byte writes, never empty, so progress is made and
+            // a boundary falls mid-write as often as it does not.
+            let take = below(4096).max(1).min(total - written);
+            chunks.write(&bytes[written..written + take]);
+            written += take;
+        }
+        let chunks = chunks.finish();
+
+        let sizes: Vec<usize> = chunks.iter().map(|chunk| chunk.len()).collect();
+        let cuts: Vec<usize> = bytes.chunks(REPLAY_CHUNK_BYTES).map(<[u8]>::len).collect();
+        assert_eq!(
+            sizes, cuts,
+            "a {total}-byte record must be cut where the contract cuts it"
+        );
+        assert!(
+            chunks
+                .iter()
+                .flat_map(|chunk| chunk.iter().copied())
+                .eq(bytes.iter().copied()),
+            "a {total}-byte record must arrive as its own bytes, once and in order"
+        );
+    }
+}
