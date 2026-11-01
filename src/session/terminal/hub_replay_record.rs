@@ -60,7 +60,11 @@ impl Chunks {
     }
 
     pub(super) fn finish(self) -> Vec<Arc<[u8]>> {
-        debug_assert_eq!(
+        // Not a debug assertion: the `unsafe` below is only sound when every
+        // allocated byte was written, so a release build has to check it too. The
+        // sum is over a handful of lengths, which is nothing next to the copy that
+        // filled them.
+        assert_eq!(
             self.written,
             self.chunks.iter().map(|chunk| chunk.len()).sum::<usize>(),
             "a replay record must be composed with the length it was sized for"
