@@ -68,8 +68,9 @@ struct Connection {
 /// Serve one terminal socket until either side is gone.
 ///
 /// The loop has nothing to poll: it waits on `link` with a timeout that is the
-/// distance to the next liveness decision, so an idle connection costs no
-/// wake-ups at all.
+/// distance to the next liveness decision, so an idle connection never wakes
+/// this thread. The only standing cost is the reader's guard interval, which is
+/// what lets a read in progress end at all.
 pub(super) fn run(
     ws: tungstenite::WebSocket<Duplex>,
     link: Link,

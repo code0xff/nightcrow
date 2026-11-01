@@ -63,8 +63,9 @@ pub(in crate::web::viewer::server) fn serve_terminal(
             return;
         }
     };
-    // One flush on a page that stopped reading is bounded. The read half's own
-    // timeout is set with its thread, where it doubles as the exit guard.
+    // A write to a page that stopped reading must not park this thread forever.
+    // The read half's own timeout is set with its thread, where it doubles as
+    // the exit guard.
     let _ = stream.set_write_timeout(Some(SSE_HEARTBEAT));
     // Terminal frames are small and latency matters more than packing them:
     // Nagle would hold a keystroke's echo until an unrelated write completed.
