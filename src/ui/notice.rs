@@ -259,7 +259,7 @@ pub(crate) fn home_relative_path(path: &str) -> String {
     // turning filesystem roots (`/`, `C:\\`, UNC shares) into different paths.
     let normalized: std::path::PathBuf = std::path::Path::new(path).components().collect();
     let path = normalized.as_path();
-    if let Some(home) = dirs::home_dir()
+    if let Some(home) = home_dir()
         && let Ok(rest) = path.strip_prefix(home)
     {
         if rest.as_os_str().is_empty() {
@@ -268,4 +268,13 @@ pub(crate) fn home_relative_path(path: &str) -> String {
         return format!("~/{}", crate::platform::paths::for_display(rest));
     }
     crate::platform::paths::for_display(path).into_owned()
+}
+
+/// The home directory, looked up once: this row is rebuilt every frame, and
+/// `dirs::home_dir` reads the environment (and the platform account database on
+/// Windows) on every call. The home directory cannot change while the process
+/// renders, so one lookup serves the whole session.
+fn home_dir() -> Option<&'static std::path::Path> {
+    static HOME: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    HOME.get_or_init(dirs::home_dir).as_deref()
 }

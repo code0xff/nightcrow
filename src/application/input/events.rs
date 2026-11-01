@@ -2,11 +2,12 @@ use crate::application::input::dispatch::{KeyOutcome, dispatch_key};
 use crate::application::input::mouse::{dispatch_mouse, mouse_kind_acts};
 use crate::application::input::paste::dispatch_paste;
 use crate::application::redraw::{RedrawCause, RedrawState};
+use crate::application::screen_geometry::ScreenGeometry;
 use crate::config::Config;
 use crate::workspace::Workspace;
 use crossterm::event::{Event, KeyEventKind};
+use ratatui::Terminal;
 use ratatui::backend::Backend;
-use ratatui::{Terminal, layout::Rect};
 use std::time::Instant;
 
 pub(crate) fn dispatch_input_event<B: Backend>(
@@ -15,13 +16,15 @@ pub(crate) fn dispatch_input_event<B: Backend>(
     cfg: &Config,
     event: Event,
     redraw: &mut RedrawState,
+    geometry: &mut ScreenGeometry,
     blink_started: Instant,
 ) -> anyhow::Result<Option<KeyOutcome>>
 where
     B::Error: Send + Sync + 'static,
 {
     let outcome = match event {
-        Event::Resize(_, _) => {
+        Event::Resize(width, height) => {
+            geometry.resized(width, height);
             redraw.request(RedrawCause::Resize);
             None
         }
@@ -41,8 +44,7 @@ where
                 return Ok(Some(KeyOutcome::Continue));
             }
             redraw.request(RedrawCause::Input);
-            let size = terminal.size()?;
-            let screen = Rect::new(0, 0, size.width, size.height);
+            let screen = geometry.screen(|| Ok(terminal.size()?))?;
             let tab_paths: Vec<String> = ws
                 .projects()
                 .iter()
