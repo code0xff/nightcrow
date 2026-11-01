@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -16,6 +16,8 @@ import {
 } from "../../lib/terminal/terminalReplay";
 import { sendTerminalMessage, type PaneSize } from "../../api/terminal";
 import type { ScreenScale } from "../ui/screenScale";
+import { createTitleThrottle } from "../../lib/terminal/titleThrottle";
+import type { TitleThrottle } from "../../lib/terminal/titleThrottle";
 
 interface UseTerminalViewsArgs {
   panes: number[];
@@ -57,6 +59,15 @@ export function useTerminalViews({
   consumeLatches,
   setTitles,
 }: UseTerminalViewsArgs) {
+  // One per pane. Titles arrive on their own schedule (a shell prompt, a
+  // spinner, an editor's tab name), and each is a toolbar render: offer them
+  // through a throttle, and stop once the pane is gone.
+  const titleThrottlesRef = useRef(new Map<number, TitleThrottle>());
+  useEffect(() => {
+    const throttles = titleThrottlesRef.current;
+    return () => throttles.forEach((throttle) => throttle.cancel());
+  }, []);
+
   useEffect(() => {
     const font = terminalFontOptions(screenScale);
     for (const pane of panes) {
@@ -141,11 +152,17 @@ export function useTerminalViews({
           });
         },
       );
-      // Preserve the previous label when OSC provides an empty title.
+      const titles = createTitleThrottle((title) => {
+        setTitles((current) =>
+          current[pane] === title ? current : { ...current, [pane]: title },
+        );
+      });
+      titleThrottlesRef.current.set(pane, titles);
       term.onTitleChange((title) => {
         const cleaned = title.replace(/\s+/g, " ").trim();
+        // Preserve the previous label when OSC provides an empty title.
         if (!cleaned) return;
-        setTitles((current) => ({ ...current, [pane]: cleaned }));
+        titles.push(cleaned);
       });
       term.open(body);
       // Before a byte is written: what follows was drawn against the PTY's
@@ -200,6 +217,8 @@ export function useTerminalViews({
 
     for (const [pane, view] of viewsRef.current) {
       if (!panes.includes(pane)) {
+        titleThrottlesRef.current.get(pane)?.cancel();
+        titleThrottlesRef.current.delete(pane);
         view.term.dispose();
         viewsRef.current.delete(pane);
       }
