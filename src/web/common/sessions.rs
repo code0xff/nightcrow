@@ -22,7 +22,12 @@ use crate::platform;
 use anyhow::{Context, Result, anyhow};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
+
+#[path = "sessions_file.rs"]
+mod file;
+
+use file::{Token, clamp, normalize, parse_expiry, serialize, sweep, trim};
 
 /// The most logins one server keeps. Each login adds a token and rewrites the
 /// file, so a script could otherwise grow it without bound; the oldest is
@@ -35,22 +40,13 @@ const MAX_SESSIONS: usize = 64;
 /// here to keep what is sent equal to what any browser will do with it.
 const MAX_COOKIE_AGE: Duration = Duration::from_secs(400 * 86400);
 
-/// On-disk marker for a token with no expiry. Not a number, so a build that
-/// predates this simply drops the line as it does any other it cannot parse.
-const NEVER: &str = "never";
-
-/// When a token stops being valid. `None` is "not on its own" — only logout or
-/// a tightened lifetime ends it.
-type Expiry = Option<SystemTime>;
-
-/// One login, kept in the order it was issued.
-struct Token {
-    value: String,
-    expiry: Expiry,
-}
-
 pub struct SessionStore {
     tokens: Mutex<Vec<Token>>,
+    /// Serializes file writes. Held from taking a snapshot through
+    /// `write_atomic`, so the last snapshot taken is the last one written and
+    /// two writers never share the fixed temp name. The tokens lock is not
+    /// held during the I/O; the order is always write lock, then tokens lock.
+    write: Mutex<()>,
     store_path: Option<PathBuf>,
     ttl: Option<Duration>,
 }
@@ -61,6 +57,7 @@ impl SessionStore {
     pub fn new(ttl: Option<Duration>) -> Self {
         Self {
             tokens: Mutex::new(Vec::new()),
+            write: Mutex::new(()),
             store_path: None,
             ttl,
         }
@@ -84,13 +81,16 @@ impl SessionStore {
                 }
             }
             let now = SystemTime::now();
-            let before = tokens.len();
-            changed = clamp(&mut tokens, ttl, now);
+            normalize(&mut tokens);
+            clamp(&mut tokens, ttl, now);
             trim(&mut tokens, MAX_SESSIONS, now);
-            changed |= tokens.len() != before;
+            // A duplicate line, a legacy order, a clamp, or a trim all leave
+            // the file describing something other than what memory holds.
+            changed = serialize(&tokens) != data;
         }
         let store = Self {
             tokens: Mutex::new(tokens),
+            write: Mutex::new(()),
             store_path: Some(path),
             ttl,
         };
@@ -135,11 +135,18 @@ impl SessionStore {
     /// Invalidate a token server-side. Clearing the cookie alone leaves a
     /// leaked token usable until expiry.
     pub fn revoke(&self, token: &str) {
-        {
+        let removed = {
             let mut tokens = self.tokens.lock().expect("session store mutex poisoned");
+            let before = tokens.len();
             tokens.retain(|t| t.value != token);
+            tokens.len() != before
+        };
+        // A logout for a token this store never held changed nothing, so
+        // rewriting the file for it would only contend with a concurrent
+        // login.
+        if removed {
+            self.persist();
         }
-        self.persist();
     }
 
     pub fn is_valid(&self, token: &str) -> bool {
@@ -173,6 +180,16 @@ impl SessionStore {
     /// propagated: a session that fails to persist is still valid in memory
     /// — the user just loses restart-survival, not access.
     fn persist(&self) {
+        let Some(path) = &self.store_path else { return };
+        // Held across the snapshot and the write because `write_atomic` uses
+        // one fixed temp name and two writers can otherwise land out of order:
+        // a snapshot taken before an eviction could be written after it,
+        // putting a token `issue` or `revoke` just removed back into the file,
+        // where a restart would make it valid again.
+        let _writing = self
+            .write
+            .lock()
+            .expect("session store write mutex poisoned");
         let data = {
             let mut tokens = self.tokens.lock().expect("session store mutex poisoned");
             // Swept here because this is the one place that already holds every
@@ -181,81 +198,10 @@ impl SessionStore {
             sweep(&mut tokens, SystemTime::now());
             serialize(&tokens)
         };
-        let Some(path) = &self.store_path else { return };
         if let Err(err) = platform::fs::write_atomic(path, data.as_bytes()) {
             tracing::warn!(%err, ?path, "could not persist session store");
         }
     }
-}
-
-/// Read one file field back into an expiry, or `None` for a line to drop.
-///
-/// The numeric branch uses `checked_add` because `UNIX_EPOCH + Duration` panics
-/// on overflow: a file naming an expiry no clock can hold would otherwise take
-/// the server down on the way up, which is the one thing reading this file is
-/// not allowed to do. A line like that is corrupt, so it is dropped like any
-/// other unreadable one.
-fn parse_expiry(field: &str) -> Option<Expiry> {
-    if field == NEVER {
-        return Some(None);
-    }
-    let secs = field.parse::<u64>().ok()?;
-    UNIX_EPOCH.checked_add(Duration::from_secs(secs)).map(Some)
-}
-
-/// Bring loaded expiries down to what the configured lifetime allows.
-///
-/// Only ever lowers: a token issued under a longer lifetime should not
-/// outlive a policy the operator has since tightened, and a token already
-/// closer to running out keeps its earlier deadline. Reports whether anything
-/// moved, which is what tells the caller the file no longer matches the tokens.
-fn clamp(tokens: &mut [Token], ttl: Option<Duration>, now: SystemTime) -> bool {
-    let Some(ceiling) = ttl.and_then(|ttl| now.checked_add(ttl)) else {
-        return false;
-    };
-    let mut shortened = false;
-    for token in tokens.iter_mut() {
-        if token.expiry.is_none_or(|at| at > ceiling) {
-            token.expiry = Some(ceiling);
-            shortened = true;
-        }
-    }
-    shortened
-}
-
-/// Forget expired tokens, then the oldest logins beyond `cap`. Tokens are kept
-/// in issue order, so the front of the list is what makes room.
-fn trim(tokens: &mut Vec<Token>, cap: usize, now: SystemTime) {
-    sweep(tokens, now);
-    let excess = tokens.len().saturating_sub(cap);
-    tokens.drain(..excess);
-}
-
-/// Forget every token whose expiry has passed. One rule, one place: loading and
-/// writing both apply it, so a token's being on disk means the same thing as its
-/// being in memory.
-fn sweep(tokens: &mut Vec<Token>, now: SystemTime) {
-    tokens.retain(|token| token.expiry.is_none_or(|at| at > now));
-}
-
-fn serialize(tokens: &[Token]) -> String {
-    let mut out = String::new();
-    for token in tokens {
-        out.push_str(&token.value);
-        out.push('\t');
-        match token.expiry {
-            Some(at) => {
-                let secs = at
-                    .duration_since(UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                out.push_str(&secs.to_string());
-            }
-            None => out.push_str(NEVER),
-        }
-        out.push('\n');
-    }
-    out
 }
 
 fn hex(bytes: &[u8]) -> String {
