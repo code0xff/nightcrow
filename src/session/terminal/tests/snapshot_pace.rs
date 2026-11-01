@@ -21,6 +21,9 @@ const WINDOW: Duration = Duration::from_millis(500);
 /// The owed output that makes waiting out the window pointless.
 const OWED_CAP: usize = 64 * 1024;
 
+/// Past the 150 ms window a synchronized update is armed with.
+const SYNC_WINDOW: Duration = Duration::from_millis(200);
+
 /// A tracker holding one alternate-screen pane whose screen was just taken at
 /// `now`.
 fn snapshotted_pane(now: Instant) -> PaneModeTracker {
@@ -114,6 +117,33 @@ fn a_pane_torn_mid_sequence_waits_for_the_tick_that_closes_it() {
         tracker.settle_restless(&[PANE], now + TICK).len(),
         1,
         "and the next clean tick takes what the torn one deferred"
+    );
+}
+
+/// A synchronized update still open is not merely a torn sequence: the grid is
+/// missing the bytes the update is holding, so a snapshot now would leave them out of
+/// the record for good. However overdue the pane is, the pass must wait for the clock
+/// to end the update.
+#[test]
+fn a_pane_holding_a_synchronized_update_is_left_alone() {
+    let now = Instant::now();
+    let mut tracker = snapshotted_pane(now);
+
+    tracker.observe(PANE, b"\x1b[?2026h\x1b[2Jheld", || (ROWS, COLS));
+    assert!(!tracker.screen_current(PANE), "the update holds its bytes");
+    tracker.note_owed(PANE, 0);
+    assert!(
+        tracker.settle_restless(&[PANE], now + WINDOW).is_empty(),
+        "a grid missing the update's bytes must never be snapshotted"
+    );
+
+    let settled = tracker.settle_sync(now + SYNC_WINDOW);
+    assert_eq!(settled.len(), 1, "the clock ends the update");
+    assert!(tracker.screen_current(PANE));
+    assert_eq!(
+        tracker.settle_restless(&[PANE], now + WINDOW).len(),
+        1,
+        "and the screen it now holds may be taken"
     );
 }
 
