@@ -20,19 +20,19 @@ fn many_small_writes_inside_the_window_cost_one_snapshot() {
     desk.tick();
     let baseline = desk.snapshots;
 
-    // 64 ticks of 8 ms: the last is 504 ms after the baseline, just past the
+    // 32 ticks of 8 ms: the last is 256 ms after the baseline, just past the
     // window. Every tick carried output.
-    for n in 0..64 {
+    for n in 0..32 {
         desk.output(&frame(n));
         desk.tick();
     }
     assert_eq!(
         desk.snapshots - baseline,
         1,
-        "64 ticks of output inside one window must cost one snapshot, not one each"
+        "32 ticks of output inside one window must cost one snapshot, not one each"
     );
     assert!(
-        desk.elapsed() >= Duration::from_millis(500),
+        desk.elapsed() >= Duration::from_millis(250),
         "and the fixture must have reached the end of the window"
     );
     assert_replay_matches_live(&desk);
@@ -50,7 +50,7 @@ fn output_past_the_owed_cap_is_snapshotted_inside_the_window() {
     let baseline = desk.snapshots;
 
     // 1 KiB per write, a tick every eight: 80 KiB in 80 ms, well inside the
-    // 500 ms window, so only the owed bytes can have asked for the snapshot.
+    // 250 ms window, so only the owed bytes can have asked for the snapshot.
     let chunk = vec![b'x'; 1024];
     for n in 0..80 {
         desk.output(&chunk);
@@ -65,7 +65,7 @@ fn output_past_the_owed_cap_is_snapshotted_inside_the_window() {
         "over the owed cap a snapshot must not wait for the window"
     );
     assert!(
-        desk.elapsed() < Duration::from_millis(500),
+        desk.elapsed() < Duration::from_millis(250),
         "and this fixture must still be inside it, was {:?}",
         desk.elapsed()
     );
@@ -97,5 +97,39 @@ fn a_record_past_the_crowded_cap_keeps_its_replay_bounded() {
         replay_bytes < MAX_TERMINAL_SCROLLBACK_BYTES + 64 * 1024,
         "a megabyte of output must not replay as {replay_bytes} bytes"
     );
+    desk.hub.stop();
+}
+
+/// A chunk past the crowded cap serializes its own grid. Output after it in the
+/// same tick must not make the end-of-tick pass pay for the same serialization
+/// again.
+#[test]
+fn a_crowded_snapshot_is_not_taken_again_in_the_same_tick() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let mut desk = Desk::new(&dir);
+    desk.output(ENTER);
+    desk.tick();
+    let baseline = desk.snapshots;
+
+    // Let the window pass with no output, so the only anchor the paced pass
+    // could use is the old entry screen rather than the crowded chunk's own.
+    for _ in 0..40 {
+        desk.tick();
+    }
+    let crowded = vec![b'z'; MAX_TERMINAL_SCROLLBACK_BYTES + 1];
+    assert!(
+        !desk.output(&crowded),
+        "a chunk past the cap takes its own screen"
+    );
+    assert!(
+        desk.output(b"more"),
+        "and later output in the tick leaves the pane restless"
+    );
+    desk.tick();
+    assert_eq!(
+        desk.snapshots, baseline,
+        "the paced pass must not serialize the grid the crowded chunk just stored"
+    );
+    assert_replay_matches_live(&desk);
     desk.hub.stop();
 }

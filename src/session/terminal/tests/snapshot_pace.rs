@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 /// The window. Restated rather than read because "one tick short of it" is the
 /// point of the test.
-const WINDOW: Duration = Duration::from_millis(500);
+const WINDOW: Duration = Duration::from_millis(250);
 
 /// The owed output that makes waiting out the window pointless.
 const OWED_CAP: usize = 64 * 1024;
@@ -179,12 +179,12 @@ fn the_worker_leaves_a_pane_restless_only_while_it_owes_a_screen() {
     let mut tracker = snapshotted_pane(now);
 
     assert!(
-        hub.record_pane_output(PANE, frame(0), &mut tracker),
+        hub.record_pane_output(PANE, frame(0), &mut tracker, now),
         "a chunk that does not take its own screen leaves it for the tick"
     );
     let crowded = vec![b'z'; MAX_TERMINAL_SCROLLBACK_BYTES + 1];
     assert!(
-        !hub.record_pane_output(PANE, crowded, &mut tracker),
+        !hub.record_pane_output(PANE, crowded, &mut tracker, now),
         "a crowded chunk takes its own screen"
     );
     assert!(
@@ -194,7 +194,7 @@ fn the_worker_leaves_a_pane_restless_only_while_it_owes_a_screen() {
         "and leaves nothing owed, so the paced pass adds nothing before the window"
     );
     assert!(
-        !hub.record_pane_output(PANE, b"\x1b[?1049lback".to_vec(), &mut tracker),
+        !hub.record_pane_output(PANE, b"\x1b[?1049lback".to_vec(), &mut tracker, now),
         "a normal-screen pane is never left for the alternate-screen pass"
     );
     hub.stop();

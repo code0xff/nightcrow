@@ -166,7 +166,7 @@ fn any_chunking_keeps_the_replay_exact_and_the_snapshot_rate_bounded() {
     assert_replay_matches_live(&desk);
 
     let elapsed_ms = desk.elapsed().as_millis() as u64;
-    let windows = elapsed_ms / 500;
+    let windows = elapsed_ms / 250;
     let caps = written as u64 / (64 * 1024);
     assert!(
         desk.snapshots as u64 <= windows + caps + 2,

@@ -83,16 +83,18 @@ impl Desk {
     /// whether the chunk left the pane for the end-of-tick pass.
     pub(super) fn output(&mut self, chunk: &[u8]) -> bool {
         self.live.process(chunk);
-        let restless = self
-            .hub
-            .record_pane_output(PANE, chunk.to_vec(), &mut self.tracker);
+        let restless =
+            self.hub
+                .record_pane_output(PANE, chunk.to_vec(), &mut self.tracker, self.now);
         if restless {
             self.restless = true;
         }
         restless
     }
 
-    /// The end of one tick: the snapshot pass, then the clock moves on.
+    /// The end of one tick: the snapshot pass, then the clock moves on. The pass
+    /// runs even when this tick moved nothing, because a pane that owed bytes
+    /// when it fell idle is due a trailing snapshot once its window passes.
     pub(super) fn tick(&mut self) {
         let restless = std::mem::take(&mut self.restless);
         let panes = if restless { vec![PANE] } else { Vec::new() };
@@ -109,6 +111,23 @@ impl Desk {
             self.snapshots += 1;
         }
         self.now += TICK;
+    }
+
+    /// Resize the pane the way the worker's layout path does: the tracking grid
+    /// and the client's, then a screen only if the recorded stream is at a clean
+    /// boundary. A torn stream defers that screen to the next clean chunk.
+    pub(super) fn resize(&mut self, rows: u16, cols: u16) {
+        self.tracker.resize(PANE, rows, cols);
+        self.live.resize(rows, cols);
+        self.rows = rows;
+        self.cols = cols;
+        if self.tracker.at_boundary(PANE)
+            && let Some(screen) = self.tracker.snapshot(PANE)
+        {
+            self.hub.store_screen(PANE, screen);
+            self.tracker.mark_stored(PANE, self.now);
+            self.snapshots += 1;
+        }
     }
 
     /// The worker's clock-driven end of a synchronized update, and the client's:

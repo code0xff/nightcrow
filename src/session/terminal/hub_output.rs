@@ -8,6 +8,7 @@ use super::hub_modes::PaneModeTracker;
 use super::{DEFAULT_PANE_SIZE, TerminalHub};
 use crate::backend::PaneId;
 use crate::session::limits;
+use std::time::Instant;
 
 impl TerminalHub {
     /// Feed one chunk of a pane's output through its tracking emulator, record it,
@@ -20,6 +21,7 @@ impl TerminalHub {
         pane: PaneId,
         data: Vec<u8>,
         modes: &mut PaneModeTracker,
+        now: Instant,
     ) -> bool {
         // Before the lock: opening a pane's tracking emulator reads the shared
         // state for its size.
@@ -28,6 +30,12 @@ impl TerminalHub {
                 .unwrap_or((DEFAULT_PANE_SIZE.rows, DEFAULT_PANE_SIZE.cols))
         });
         let alt = observed.modes.alt_screen;
+        // A switch is a different record with a different screen. The window
+        // that bounded the old one says nothing about the new one, and bytes
+        // owed on a screen the program has left must not drive a snapshot.
+        if observed.alt_changed {
+            modes.reset_pace(pane);
+        }
         // A chunk that moved the pane onto the alternate screen carries the
         // switch and the first paint together, so its screen is taken in the
         // same breath as the record — provided the chunk ends clean
@@ -36,12 +44,17 @@ impl TerminalHub {
         // closes; until then a connecting client replays `since` raw, landing
         // pre-switch text on the wrong buffer for that moment — the paint that
         // follows covers it, and the retry replaces it.
-        let screen = (alt && observed.alt_changed && modes.at_boundary(pane))
-            .then(|| modes.snapshot(pane))
-            .flatten();
+        let entry_screen = alt && observed.alt_changed && modes.at_boundary(pane);
+        let screen = entry_screen.then(|| modes.snapshot(pane)).flatten();
         let owed = self.record_and_broadcast(pane, data, observed, screen);
         if alt {
             modes.note_owed(pane, owed);
+        }
+        if entry_screen {
+            // The chunk carried its own screen. Taking another at the end of
+            // the tick would serialize the same grid twice.
+            modes.mark_stored(pane, now);
+            return false;
         }
         // Snapshots wait for a chunk that ends with its sequences closed
         // (`at_boundary`): the snapshot is spliced into the recorded stream on
@@ -63,6 +76,7 @@ impl TerminalHub {
                 // serialization once per ring's worth of output.
                 if let Some(screen) = modes.snapshot(pane) {
                     self.store_normal_screen(pane, screen);
+                    modes.mark_stored(pane, now);
                 }
             }
             return false;
@@ -74,7 +88,7 @@ impl TerminalHub {
             // nothing after it, so the paced pass has nothing to add.
             if let Some(screen) = modes.snapshot(pane) {
                 self.store_screen(pane, screen);
-                modes.note_owed(pane, 0);
+                modes.mark_stored(pane, now);
             }
             return false;
         }

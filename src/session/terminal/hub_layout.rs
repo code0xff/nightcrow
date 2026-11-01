@@ -6,6 +6,7 @@ use super::TerminalHub;
 use super::frame::{ServerMessage, TerminalFrame};
 use super::hub_helpers::{PendingResize, broadcast_locked, canonical_order};
 use crate::backend::{PaneId, PtyBackend, TerminalBackend};
+use std::time::Instant;
 
 impl TerminalHub {
     /// Keep only the newest requested size for this connection and pane.
@@ -138,6 +139,9 @@ impl TerminalHub {
                         p.covered = p.scrollback.len();
                         p.normal_screen = screen;
                     }
+                    // The resize stored a screen for the new grid; the pace
+                    // starts from it rather than from the one it replaced.
+                    modes.mark_stored(pane, Instant::now());
                 }
                 if let Ok(json) =
                     serde_json::to_string(&ServerMessage::Resized { pane, rows, cols })

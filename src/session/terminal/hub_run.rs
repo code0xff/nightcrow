@@ -121,11 +121,16 @@ impl TerminalHub {
             // program sends many small chunks, and serializing a grid per chunk
             // would be the most expensive thing on this path.
             let mut restless: Vec<PaneId> = Vec::new();
+            // One clock for the whole tick: the chunk path, the synchronized
+            // update that ends on the clock, and the paced pass all read the
+            // same moment, so a screen stored by one is not immediately due
+            // to the other.
+            let now = Instant::now();
             for event in backend.drain_events() {
                 match event {
                     BackendEvent::Output { pane, data } => {
                         plugins.pane_output(&backend, pane, &data);
-                        if self.record_pane_output(pane, data, &mut modes)
+                        if self.record_pane_output(pane, data, &mut modes, now)
                             && !restless.contains(&pane)
                         {
                             restless.push(pane);
@@ -165,7 +170,7 @@ impl TerminalHub {
             // at the processor's buffer cap either. Ended on the clock, so a
             // grid no byte will ever release stops holding the pane's modes
             // and every snapshot taken from it.
-            for (pane, observed) in modes.settle_sync(Instant::now()) {
+            for (pane, observed) in modes.settle_sync(now) {
                 let alt = observed.modes.alt_screen;
                 self.store_settled(pane, observed);
                 if alt && !restless.contains(&pane) {
@@ -173,15 +178,17 @@ impl TerminalHub {
                 }
             }
 
-            // Once per tick, for every alternate-screen pane this tick moved: the
-            // screen a connecting client is given, and the point at which what it
-            // is owed on top of that screen goes back to nothing. Paced rather
-            // than taken every tick — see `PaneModeTracker::settle_restless` — so
-            // a program that paints several times per tick costs one
-            // serialization per window instead of one per tick. A pane whose
+            // Once per tick, for every alternate-screen pane this tick moved and
+            // for every pane that still owes bytes after falling idle: the screen
+            // a connecting client is given, and the point at which what it is owed
+            // on top of that screen goes back to nothing. Paced rather than taken
+            // every tick — see `PaneModeTracker::settle_restless` — so a program
+            // that paints several times per tick costs one serialization per
+            // window instead of one per tick, while a quiet pane still gets a
+            // trailing snapshot one window after its last write. A pane whose
             // last chunk ended mid-sequence keeps its old anchor — it is restless
             // again the moment it produces more output.
-            for (pane, screen) in modes.settle_restless(&restless, Instant::now()) {
+            for (pane, screen) in modes.settle_restless(&restless, now) {
                 self.store_screen(pane, screen);
             }
 
