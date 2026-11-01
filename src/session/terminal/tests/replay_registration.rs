@@ -119,3 +119,49 @@ fn repeated_unwinds_leave_no_client_behind() {
     }
     hub.stop();
 }
+
+/// The guard runs while unwinding, so the state lock a panicking thread held may
+/// already be poisoned. It has to take the lock anyway: refusing would leave the
+/// record behind and abort the unwind it is part of. Nothing else is left to clean
+/// up after `connect` dies there.
+#[test]
+fn a_guard_still_removes_its_client_through_a_poisoned_lock() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub =
+        spawn_hub_with_auto_open(&dir.path().to_string_lossy(), Vec::new(), Vec::new(), false);
+    let id = 42;
+    let (tx, _rx): (mpsc::SyncSender<TerminalFrame>, _) =
+        mpsc::sync_channel(CLIENT_QUEUE_DEPTH + 1);
+    hub.state
+        .lock()
+        .expect("the fixture must acquire the state")
+        .clients
+        .push(Client {
+            id,
+            tx,
+            replay_held: Some(Vec::new()),
+            socket: None,
+            connection: None,
+        });
+    let died = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = hub
+            .state
+            .lock()
+            .expect("the fixture must acquire the state");
+        panic!("a thread that dies holding the terminal state");
+    }));
+    assert!(died.is_err(), "the fixture must poison the state lock");
+    assert!(hub.state.is_poisoned(), "the lock must be poisoned");
+
+    drop(RegistrationGuard::new(&hub, id));
+
+    let removed = hub
+        .state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clients
+        .is_empty();
+    assert!(removed, "the guard must unregister through the poison");
+    hub.state.clear_poison();
+    hub.stop();
+}
