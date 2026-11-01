@@ -108,7 +108,7 @@ impl TerminalHub {
                 if !state
                     .clients
                     .iter()
-                    .any(|c| c.id == client && c.connection == connection)
+                    .any(|c| c.id == client && c.connection == Some(connection))
                 {
                     return;
                 }
