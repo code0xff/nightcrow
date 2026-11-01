@@ -19,6 +19,7 @@ mod reattach;
 mod recovery;
 mod recovery_replay;
 mod replay_complete;
+mod replay_delivery;
 mod replay_fidelity;
 mod replay_locking;
 mod replay_record;
