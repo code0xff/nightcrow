@@ -21,6 +21,13 @@ function write(term: Terminal, data: string): Promise<void> {
   return new Promise((resolve) => term.write(data, resolve));
 }
 
+function bufferText(term: Terminal): string {
+  const buffer = term.buffer.active;
+  return Array.from({ length: buffer.length }, (_, row) =>
+    buffer.getLine(row)?.translateToString(true) ?? "",
+  ).join("\n");
+}
+
 describe("terminal replay reply gate", () => {
   it("holds historical CPR until the queued replay boundary and keeps user input live", async () => {
     const term = terminal();
@@ -61,5 +68,23 @@ describe("terminal replay reply gate", () => {
     gate.release();
     await write(term, "\x1b]52;c;SGVsbG8=\x07");
     expect(clipboard).toHaveBeenCalledWith("c;SGVsbG8=");
+  });
+
+  it("clears screen and scrollback, so a replay is what the pane shows", async () => {
+    // The reconnect path keeps the emulator and resets it before the hub's
+    // replay, which is an absolute repaint of history and screen. This pins
+    // what that reset has to leave behind: no older line may survive under it.
+    const term = terminal();
+    await write(
+      term,
+      Array.from({ length: 40 }, (_, i) => `old-${i}`).join("\r\n"),
+    );
+    expect(bufferText(term)).toContain("old-39");
+
+    term.reset();
+    await write(term, "replayed");
+
+    expect(bufferText(term)).toContain("replayed");
+    expect(bufferText(term)).not.toContain("old-");
   });
 });

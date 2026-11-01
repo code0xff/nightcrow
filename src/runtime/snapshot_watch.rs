@@ -8,6 +8,9 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 
+mod filter;
+pub(super) use filter::{IgnoredDirs, any_matters};
+
 pub(super) enum Wake {
     /// Filesystem paths that changed. An empty list means something changed that
     /// the watcher could not name — including its own error — which is a reason
@@ -150,47 +153,6 @@ pub(super) fn external_git_dir(repo: &git2::Repository, roots: &Roots) -> Option
         Some(_) => None,
         None => Some(common.to_path_buf()),
     }
-}
-
-/// Whether any of `paths` could change what a status says.
-///
-/// `repo` is used to ask git what it ignores; without a handle open every path
-/// counts, since guessing wrong the other way would leave a real change unread.
-pub(super) fn any_matters(
-    repo: Option<&git2::Repository>,
-    roots: &Roots,
-    paths: &[PathBuf],
-) -> bool {
-    // Nothing named: the watcher lost track, so look.
-    if paths.is_empty() {
-        return true;
-    }
-    paths.iter().any(|path| matters(repo, roots, path))
-}
-
-fn matters(repo: Option<&git2::Repository>, roots: &Roots, path: &Path) -> bool {
-    if let Some(git_dir) = &roots.git_dir
-        && let Some(inside) = git_dir.relative(path)
-    {
-        return git_metadata_matters(inside);
-    }
-    let Some(relative) = roots.tree.relative(path) else {
-        // Outside anything watched, which should not be reported. A path that
-        // cannot be placed is read rather than dropped.
-        return true;
-    };
-    if let Ok(inside) = relative.strip_prefix(".git") {
-        return git_metadata_matters(inside);
-    }
-    let Some(repo) = repo else {
-        return true;
-    };
-    // Build output is the loudest thing in a working tree and the one thing git
-    // has been told to disregard: skipping it is what makes this worth having.
-    //
-    // A tracked file inside an ignored directory (added with `-f`) is the case
-    // this skips wrongly. The idle read is what still catches it.
-    !repo.is_path_ignored(relative).unwrap_or(false)
 }
 
 /// Whether a change at `inside` — a path relative to a git directory — could

@@ -85,22 +85,12 @@ pub(crate) fn render_file_view(
         // diff view does not shift the body's left edge.
         let digits = super::gutter::digits_for(total);
         gutter_width = super::gutter::side_gutter_width(digits);
-        // Belt-and-braces: if the highlight-cache invariant ever slips, the
-        // slice below would panic — clamp against the cache length.
-        let max_scroll = total
-            .saturating_sub(1)
-            .min(fv.line_highlights.len().saturating_sub(1));
-        let scroll_start = fv.scroll.min(max_scroll);
-        let scroll_end = scroll_start
-            .saturating_add(visible_height)
-            .min(fv.line_highlights.len());
+        let scroll_start = fv.scroll.min(total.saturating_sub(1));
+        let scroll_end = scroll_start.saturating_add(visible_height).min(total);
 
-        fv.line_highlights[scroll_start..scroll_end]
-            .iter()
-            .enumerate()
-            .map(|(i, segs)| {
-                let line_no = scroll_start + i + 1;
-                let line_idx = scroll_start + i;
+        (scroll_start..scroll_end)
+            .map(|line_idx| {
+                let line_no = line_idx + 1;
                 let is_anchor = fv.anchor_line == Some(line_no);
                 let is_current = has_search && current_match == Some(line_idx);
                 let is_match =
@@ -120,15 +110,24 @@ pub(crate) fn render_file_view(
                     super::gutter::side_gutter_text(Some(line_no as u32), digits),
                     Style::default().fg(Color::DarkGray).bg(bg),
                 )));
-                let spans: Vec<Span> = segs
-                    .iter()
-                    .map(|seg| {
-                        Span::styled(
-                            seg.text.as_str(),
-                            Style::default().fg(super::rgb_to_color(seg.rgb)).bg(bg),
-                        )
-                    })
-                    .collect();
+                // Past the highlight cap the cache has no entry; plain text
+                // still renders so the whole file stays scrollable and
+                // searchable.
+                let spans: Vec<Span> = match fv.line_highlights.get(line_idx) {
+                    Some(segs) => segs
+                        .iter()
+                        .map(|seg| {
+                            Span::styled(
+                                seg.text.as_str(),
+                                Style::default().fg(super::rgb_to_color(seg.rgb)).bg(bg),
+                            )
+                        })
+                        .collect(),
+                    None => vec![Span::styled(
+                        fv.line_text(line_idx).unwrap_or(""),
+                        Style::default().bg(bg),
+                    )],
+                };
                 Line::from(spans)
             })
             .collect()

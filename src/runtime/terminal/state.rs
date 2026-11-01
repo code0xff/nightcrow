@@ -67,6 +67,23 @@ impl TerminalState {
         self.visible_start = range.start;
     }
 
+    /// Whether `id` falls inside the split window the renderer draws. The
+    /// renderer recomputes the same range from `visible_start` and
+    /// `max_visible`, so a pane this rejects is exactly one whose output
+    /// cannot change the frame.
+    pub(crate) fn pane_is_visible(&self, id: PaneId) -> bool {
+        let Some(index) = self.panes.iter().position(|pane| pane.id == id) else {
+            return false;
+        };
+        visible_range(
+            self.visible_start,
+            self.active,
+            self.panes.len(),
+            self.max_visible(),
+        )
+        .contains(&index)
+    }
+
     /// Screen for a specific pane, independent of which pane is currently
     /// active — the split-view renderer draws every visible pane, not just
     /// the focused one.

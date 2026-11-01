@@ -45,7 +45,7 @@ mod startup_run;
 #[cfg(test)]
 pub use frame::decode_output;
 pub use frame::{ClientMessage, PaneSize, TerminalFrame, encode_output};
-pub use session::TerminalSession;
+pub use session::{FrameWait, TerminalSession};
 
 use crate::session::size_owner::SizeOwnership;
 use hub_helpers::{Command, PendingResize, Shared};
@@ -237,38 +237,6 @@ impl TerminalHub {
         state.reserved = state.reserved.saturating_sub(count);
     }
 
-    #[cfg(test)]
-    pub fn client_count(&self) -> usize {
-        self.state
-            .lock()
-            .expect("terminal state poisoned")
-            .clients
-            .len()
-    }
-
-    #[cfg(test)]
-    pub(super) fn set_concurrency_test_hook(
-        &self,
-        hook: impl Fn(ConcurrencyTestPoint) + Send + Sync + 'static,
-    ) {
-        *self
-            .concurrency_test_hook
-            .lock()
-            .expect("terminal concurrency test hook poisoned") = Some(Arc::new(hook));
-    }
-
-    #[cfg(test)]
-    pub(super) fn run_concurrency_test_hook(&self, point: ConcurrencyTestPoint) {
-        let hook = self
-            .concurrency_test_hook
-            .lock()
-            .expect("terminal concurrency test hook poisoned")
-            .clone();
-        if let Some(hook) = hook {
-            hook(point);
-        }
-    }
-
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Release);
         let handle = self
@@ -290,6 +258,10 @@ impl Drop for TerminalHub {
         self.stop();
     }
 }
+
+#[cfg(test)]
+#[path = "test_api.rs"]
+mod test_api;
 
 #[cfg(test)]
 mod tests;

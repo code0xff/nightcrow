@@ -1,3 +1,6 @@
+mod highlight_cap;
+mod highlight_reuse;
+
 use super::*;
 use crate::git::diff::{DiffLine, LineKind};
 
@@ -104,6 +107,7 @@ fn replacing_hunks_updates_generation_metadata_and_split_cache() {
     assert_eq!(pane.max_line_number(), 220);
     assert_eq!(pane.syntax_shape, vec![Some("rs".to_string())]);
     assert_eq!(pane.split_rows().len(), 2);
+    pane.ensure_lower_cache();
     assert_eq!(pane.hunks_lines_lower[0][0], "fn cached() {}");
 }
 

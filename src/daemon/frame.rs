@@ -5,7 +5,7 @@
 
 use super::protocol::ServerMessage;
 use anyhow::{Context, Result, bail};
-use std::io::{Read, Write};
+use std::io::{IoSlice, Read, Write};
 
 /// Largest payload one frame may carry — the ceiling on what a single message
 /// can make the process allocate, since the reader allocates whatever length
@@ -91,6 +91,9 @@ pub(super) fn encode_server(
     }
 }
 
+/// Frames up to this size are written from one contiguous buffer.
+const COALESCE_FRAME_BYTES: usize = 4096;
+
 /// Write one frame: kind byte, big-endian length, payload. Does not flush —
 /// flushing here would turn every batch into one syscall per frame.
 pub fn write_frame<W: Write>(writer: &mut W, frame: &Frame) -> Result<()> {
@@ -100,14 +103,46 @@ pub fn write_frame<W: Write>(writer: &mut W, frame: &Frame) -> Result<()> {
             frame.payload.len()
         );
     }
-    // Built as one buffer and written once: a header written separately can
-    // reach the peer as its own packet, leaving a reader blocked on a body
-    // that never comes.
-    let mut out = Vec::with_capacity(5 + frame.payload.len());
-    out.push(frame.kind as u8);
-    out.extend_from_slice(&(frame.payload.len() as u32).to_be_bytes());
-    out.extend_from_slice(&frame.payload);
-    writer.write_all(&out).context("writing a daemon frame")?;
+    let mut header = [0u8; 5];
+    header[0] = frame.kind as u8;
+    header[1..].copy_from_slice(&(frame.payload.len() as u32).to_be_bytes());
+    // A small frame is copied into one buffer: a writer without a native
+    // vectored write (the Windows attach socket) would otherwise send the
+    // header and payload as two writes. A large payload is offered as a second
+    // slice instead, so it is not copied again to be framed.
+    if frame.payload.len() <= COALESCE_FRAME_BYTES {
+        let mut out = Vec::with_capacity(header.len() + frame.payload.len());
+        out.extend_from_slice(&header);
+        out.extend_from_slice(&frame.payload);
+        writer.write_all(&out).context("writing a daemon frame")?;
+        return Ok(());
+    }
+    write_all_vectored(
+        writer,
+        &mut [IoSlice::new(&header), IoSlice::new(&frame.payload)],
+    )
+    .context("writing a daemon frame")?;
+    Ok(())
+}
+
+/// `write_all` for a pair of slices: resumes where a `write_vectored` stopped,
+/// since a writer may accept only part of what it was offered — and one that
+/// implements only `write` accepts only the first slice.
+fn write_all_vectored<W: Write>(
+    writer: &mut W,
+    mut bufs: &mut [IoSlice<'_>],
+) -> std::io::Result<()> {
+    while !bufs.is_empty() {
+        match writer.write_vectored(bufs) {
+            // A non-empty slice that accepts nothing can never make progress.
+            Ok(0) => {
+                return Err(std::io::Error::from(std::io::ErrorKind::WriteZero));
+            }
+            Ok(written) => IoSlice::advance_slices(&mut bufs, written),
+            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(err) => return Err(err),
+        }
+    }
     Ok(())
 }
 

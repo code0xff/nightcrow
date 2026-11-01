@@ -44,7 +44,7 @@ fn replay_frames(session: &TerminalSession) -> Vec<Vec<u8>> {
         if let TerminalFrame::Output { pane, data } = frame
             && pane == PANE
         {
-            frames.push(data);
+            frames.push(data.to_vec());
         }
     }
     frames

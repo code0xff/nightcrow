@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   GRID_MIN_VIEWPORT_PX,
+  STACKED_STACK_CLASS,
   canChoosePaneViewMode,
   defaultPaneViewMode,
   parsePaneViewMode,
@@ -63,6 +64,19 @@ describe("stackedCellStyle", () => {
     expect(hidden.display).toBe("flex");
     expect(hidden.inset).toBe(0);
     expect(hidden.visibility).toBe("hidden");
+  });
+
+  it("moves a hidden tab out of the stack, where xterm stops rendering", () => {
+    // `visibility: hidden` alone still intersects the viewport, so a background
+    // pane would keep painting; the transform is what pauses it.
+    expect(stackedCellStyle(false).transform).toBe(
+      "translateX(calc(-100% - 2px))",
+    );
+    expect(stackedCellStyle(true).transform).toBeUndefined();
+  });
+
+  it("keeps the stack clipped so the moved cell leaves the viewport", () => {
+    expect(STACKED_STACK_CLASS).toContain("overflow-hidden");
   });
 
   it("shows the pane on top of the stack", () => {

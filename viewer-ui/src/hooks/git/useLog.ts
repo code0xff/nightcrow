@@ -42,7 +42,18 @@ export function useLog({
   head,
   handle,
 }: UseLogArgs): UseLogResult {
-  const [commits, setCommits] = useState<Commit[]>([]);
+  // Pages are appended into one array rather than rebuilt from a spread on
+  // every page: the growth is then the size of the page, not of the history.
+  // A revision counter is what tells React to render again. Appends can never
+  // remove a row, so keeping the identity across them is also the right signal
+  // for consumers that watch the list for a vanished drill-down.
+  const commitsRef = useRef<Commit[]>([]);
+  const [, setCommitRevision] = useState(0);
+  const bumpCommitRevision = useCallback(
+    () => setCommitRevision((revision) => revision + 1),
+    [],
+  );
+  const commits = commitsRef.current;
   const [logDone, setLogDone] = useState(false);
   // Keep transport failure distinct from end-of-history so the list can offer retry.
   const [logStalled, setLogStalled] = useState(false);
@@ -71,17 +82,16 @@ export function useLog({
     logRequestRef.current += 1;
     logLoadingRef.current = false;
     refreshingRef.current = false;
-    setCommits([]);
+    commitsRef.current = [];
+    bumpCommitRevision();
     logAnchorRef.current = null;
     setLogDone(false);
     setLogStalled(false);
     accountedHeadRef.current = undefined;
     askedHeadRef.current = undefined;
-  }, []);
+  }, [bumpCommitRevision]);
   const [commitDrillDown, setCommitDrillDown] =
     useState<CommitDrillDown | null>(null);
-  const commitsRef = useRef(commits);
-  commitsRef.current = commits;
   const logDoneRef = useRef(logDone);
   logDoneRef.current = logDone;
   const headRef = useRef(head);
@@ -113,7 +123,8 @@ export function useLog({
           done: logDoneRef.current,
         };
         const next = reconcileLog(fresh, cache.commits, cache.done);
-        setCommits(next.commits);
+        commitsRef.current = next.commits;
+        bumpCommitRevision();
         logAnchorRef.current = next.anchor;
         accountedHeadRef.current = next.anchor;
         // An answer that agrees with the report spends the ask; one that
@@ -134,7 +145,7 @@ export function useLog({
         }
       }
     },
-    [repo, handle],
+    [repo, handle, bumpCommitRevision],
   );
 
   const loadLogPage = useCallback(async () => {
@@ -150,7 +161,8 @@ export function useLog({
           : { from: anchor, skip: commitsRef.current.length },
       );
       if (request !== logRequestRef.current) return;
-      setCommits((held) => [...held, ...page.commits]);
+      commitsRef.current.push(...page.commits);
+      bumpCommitRevision();
       logAnchorRef.current = page.head ?? null;
       setLogDone(!page.truncated || page.head === undefined);
       if (anchor === null) {
@@ -175,7 +187,7 @@ export function useLog({
     } finally {
       if (request === logRequestRef.current) logLoadingRef.current = false;
     }
-  }, [repo, handle, refreshLogPage]);
+  }, [repo, handle, refreshLogPage, bumpCommitRevision]);
 
   useEffect(() => {
     if (!repo || !authed || tab !== "log") return;
@@ -211,9 +223,13 @@ export function useLog({
     void refreshLogPage();
   }, [repo, authed, tab, head, logStalled, refreshLogPage]);
 
-  const visibleCommits = commits.filter((c) =>
-    c.summary.toLowerCase().includes(filter.toLowerCase()),
-  );
+  // An empty filter is the ordinary case (paging pauses while one is set), so
+  // it shares the list instead of scanning it on every render.
+  const needle = filter.toLowerCase();
+  const visibleCommits =
+    needle === ""
+      ? commits
+      : commits.filter((c) => c.summary.toLowerCase().includes(needle));
   // Filtering is client-side; do not page through the entire history looking for matches.
   const logPagingPaused = filter !== "";
 

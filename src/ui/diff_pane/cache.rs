@@ -14,6 +14,19 @@ impl DiffPane {
     /// are deliberately left untouched; callers decide which of those should
     /// reset for a particular load mode.
     pub fn set_hunks(&mut self, hunks: Vec<DiffHunk>) {
+        // Keep the generation that just left the screen so `ensure_highlight_cache`
+        // can reuse a shared hunk prefix. An emptied diff has nothing to compare
+        // against later, so it releases that memory instead of holding it.
+        self.previous_hunks = std::mem::take(&mut self.hunks);
+        self.previous_highlights = std::mem::take(&mut self.line_highlights);
+        self.previous_checkpoints = std::mem::take(&mut self.highlight_checkpoints);
+        self.previous_hunks.truncate(self.previous_highlights.len());
+        if hunks.is_empty() {
+            self.previous_hunks.clear();
+            self.previous_highlights.clear();
+            self.previous_checkpoints.clear();
+        }
+
         self.hunks = hunks;
         self.generation = self.generation.wrapping_add(1);
 
@@ -21,7 +34,9 @@ impl DiffPane {
         self.max_line_number = 0;
 
         self.hunks_lines_lower.clear();
-        self.hunks_lines_lower.reserve(self.hunks.len());
+        // Built on demand by `ensure_lower_cache`, so a load without an active
+        // search never lowercases the diff.
+        self.lower_cache_generation = None;
         self.hunk_starts.clear();
         self.hunk_starts.reserve(self.hunks.len());
         self.syntax_shape.clear();
@@ -38,7 +53,6 @@ impl DiffPane {
                     .map(str::to_owned),
             );
 
-            let mut lines_lower = Vec::with_capacity(hunk.lines.len());
             for line in &hunk.lines {
                 if let Some(old) = line.old_lineno {
                     self.max_line_number = self.max_line_number.max(old);
@@ -46,11 +60,8 @@ impl DiffPane {
                 if let Some(new) = line.new_lineno {
                     self.max_line_number = self.max_line_number.max(new);
                 }
-                lines_lower.push(line.content.to_lowercase());
             }
-            self.hunks_lines_lower.push(lines_lower);
         }
-        self.lower_cache_generation = Some(self.generation);
 
         self.split_rows.clear();
         let mut removed = Vec::new();
@@ -73,7 +84,6 @@ impl DiffPane {
             flush_split_blocks(&mut self.split_rows, hi, &mut removed, &mut added);
         }
 
-        self.line_highlights.clear();
         self.highlight_cache_generation = None;
         self.search.matches.clear();
     }

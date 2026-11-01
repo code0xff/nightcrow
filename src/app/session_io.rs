@@ -36,7 +36,7 @@ impl App {
             log_drill_down: self.git.view.log.drill_down,
             log_file_selected: self.git.view.log.file_selected,
             tree_selected_path: self.git.view.tree.selected_path(),
-            tree_expanded: self.git.view.tree.expanded.iter().cloned().collect(),
+            tree_expanded: self.git.view.tree.expanded().iter().cloned().collect(),
         }
     }
 
@@ -146,20 +146,22 @@ impl App {
         // repo-internal relative paths, so a hand-edited `..` or absolute path
         // can't drive a directory read outside the working tree.
         // (`refresh_tree_cache` prunes entries missing on disk.)
-        self.git.view.tree.expanded = state
-            .tree_expanded
-            .iter()
-            .filter(|p| crate::ui::tree_view::is_safe_rel_path(p))
-            .cloned()
-            .collect();
+        self.git.view.tree.set_expanded(
+            state
+                .tree_expanded
+                .iter()
+                .filter(|p| crate::ui::tree_view::is_safe_rel_path(p))
+                .cloned()
+                .collect(),
+        );
         self.refresh_tree_cache();
         if let Some(path) = &state.tree_selected_path {
-            let rows = self.git.view.tree.visible_rows();
+            let rows = self.git.view.tree.rows();
             if let Some(idx) = rows.iter().position(|r| &r.path == path) {
                 self.git.view.tree.selected = idx;
             }
         }
-        let row_count = self.git.view.tree.visible_rows().len();
+        let row_count = self.git.view.tree.rows().len();
         self.git.view.tree.clamp_selection(row_count);
         self.preview_tree_selected();
     }

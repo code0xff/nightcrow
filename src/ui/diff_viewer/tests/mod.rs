@@ -180,6 +180,7 @@ fn skewed_pair_hunk() -> DiffHunk {
 }
 
 mod file_view;
+mod highlight_cap;
 mod split;
 mod unified;
 mod wrap;

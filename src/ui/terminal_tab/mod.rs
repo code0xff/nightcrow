@@ -6,7 +6,7 @@ mod tab_bar;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use cells::visible_pane_content_areas;
+pub(crate) use cells::{visible_pane_content_areas, visible_pane_ids};
 pub(crate) use tab_bar::tab_target_at;
 
 use crate::app::{App, Focus, leader_label_of};
@@ -14,7 +14,7 @@ use crate::runtime::terminal::visible_range;
 use crate::ui::terminal_tab::cells::visible_pane_cells;
 use crate::ui::terminal_tab::layout::{TERMINAL_BORDERS, terminal_layout};
 use crate::ui::terminal_tab::recovery::pane_label;
-use crate::ui::terminal_tab::screen::{build_screen_lines, render_cursor};
+use crate::ui::terminal_tab::screen::{ScreenCells, render_cursor};
 use crate::ui::terminal_tab::tab_bar::render_tab_bar;
 use ratatui::{
     Frame,
@@ -94,9 +94,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         if cell.content.width == 0 || cell.content.height == 0 {
             continue;
         }
-        let screen_lines =
-            build_screen_lines(app, cell.id, cell.content.height, cell.content.width);
-        frame.render_widget(Paragraph::new(screen_lines), cell.content);
+        frame.render_widget(ScreenCells::new(app, cell.id), cell.content);
         if is_active {
             render_cursor(frame, app, cell.id, cell.content);
         }

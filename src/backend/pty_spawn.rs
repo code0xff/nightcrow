@@ -159,8 +159,8 @@ impl PtyBackend {
             PtyPane {
                 master: Some(pair.master),
                 input: Some(input),
-                killer,
-                process_tree,
+                killer: Some(killer),
+                process_tree: Some(process_tree),
                 rx: Some(rx),
                 reader_handle: Some(reader_handle),
                 writer_handle: Some(writer_handle),

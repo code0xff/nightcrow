@@ -109,6 +109,22 @@ impl PrefsStore {
         self.state.lock().expect("prefs poisoned").clone()
     }
 
+    /// The accent alone, read under the lock rather than cloning every
+    /// preference. The session watcher asks for this on every tick, and the
+    /// per-project lists it would otherwise copy grow with the session.
+    pub fn accent(&self) -> usize {
+        self.state.lock().expect("prefs poisoned").accent
+    }
+
+    /// The focused project's path alone, for the same reason as [`Self::accent`].
+    pub fn active_repo(&self) -> Option<String> {
+        self.state
+            .lock()
+            .expect("prefs poisoned")
+            .active_repo
+            .clone()
+    }
+
     /// Apply `change` and persist the result under the lock, so file and memory
     /// stay in step. A failed write is logged and the in-memory value still
     /// applies.

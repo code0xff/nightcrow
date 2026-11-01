@@ -123,7 +123,7 @@ fn tree_search_finds_file_in_unexpanded_dir() {
     let mut app = app_on(&path);
     app.enter_tree_mode();
     // `src` starts collapsed, so its child is not in the normal view.
-    assert!(!app.git.view.tree.expanded.contains("src"));
+    assert!(!app.git.view.tree.expanded().contains("src"));
 
     app.start_tree_search();
     for ch in "main".chars() {
@@ -142,7 +142,7 @@ fn tree_search_finds_file_in_unexpanded_dir() {
         Some("src/main.rs")
     );
     // Filtering must not mutate the real expansion set.
-    assert!(!app.git.view.tree.expanded.contains("src"));
+    assert!(!app.git.view.tree.expanded().contains("src"));
     drop(dir);
 }
 
@@ -162,7 +162,7 @@ fn confirm_tree_search_reveals_match_in_normal_view() {
     // the chosen file stays visible with the cursor on it.
     assert!(!app.git.view.tree.search_active);
     assert!(app.git.view.tree.search_query.is_empty());
-    assert!(app.git.view.tree.expanded.contains("src"));
+    assert!(app.git.view.tree.expanded().contains("src"));
     assert_eq!(
         app.git.view.tree.selected_path().as_deref(),
         Some("src/main.rs")
@@ -185,7 +185,7 @@ fn cancel_tree_search_leaves_expansion_untouched() {
     assert!(!app.git.view.tree.search_active);
     assert!(app.git.view.tree.search_query.is_empty());
     // Esc must not expand anything; the view returns to its prior state.
-    assert!(!app.git.view.tree.expanded.contains("src"));
+    assert!(!app.git.view.tree.expanded().contains("src"));
     assert!(
         !app.git
             .view
@@ -254,7 +254,7 @@ fn enter_tree_mode_reflects_moved_dir_without_error() {
     app.enter_tree_mode();
     app.git.view.tree.selected = tree_index_of(&app, "src");
     app.tree_expand();
-    assert!(app.git.view.tree.expanded.contains("src"));
+    assert!(app.git.view.tree.expanded().contains("src"));
 
     // Move `src/` to `lib/` on disk while away from Tree mode.
     app.exit_tree_to_status();
@@ -272,7 +272,7 @@ fn enter_tree_mode_reflects_moved_dir_without_error() {
     );
     // The stale `src` expansion is pruned (it no longer exists), so no
     // failing re-read leaks a "tree error" into the status bar.
-    assert!(!app.git.view.tree.expanded.contains("src"));
+    assert!(!app.git.view.tree.expanded().contains("src"));
     assert!(
         !app.notice
             .as_ref()

@@ -3,12 +3,12 @@ pub(crate) use crate::application::input::dispatch::ProjectContext;
 use crate::application::input::events::dispatch_input_event;
 use crate::application::input::ready::{InputControl, process_ready_input};
 use crate::application::redraw::{RedrawCause, RedrawState};
+use crate::application::screen_geometry::ScreenGeometry;
 use crate::application::session_link::SessionLink;
 use crate::application::size_activity::claim_for_user_activity;
 use crate::application::terminal_guard::TuiTerminal;
 use crate::workspace::Workspace;
 use crossterm::event::{self, Event};
-use ratatui::layout::Rect;
 use std::time::{Duration, Instant, SystemTime};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -24,6 +24,7 @@ pub(crate) fn main_loop(
 ) -> anyhow::Result<()> {
     let blink_started = std::time::Instant::now();
     let mut redraw = RedrawState::new();
+    let mut geometry = ScreenGeometry::default();
     loop {
         // Whoever owns the tab list gets the first word each tick: attached,
         // the set may have changed under this client since the last frame.
@@ -47,8 +48,15 @@ pub(crate) fn main_loop(
 
         let progress = process_ready_input(read_ready_event, expand_input_event, |event| {
             claim_for_user_activity(ws, &event);
-            let outcome =
-                dispatch_input_event(terminal, ws, cfg, event, &mut redraw, blink_started)?;
+            let outcome = dispatch_input_event(
+                terminal,
+                ws,
+                cfg,
+                event,
+                &mut redraw,
+                &mut geometry,
+                blink_started,
+            )?;
             if let Some(outcome) = outcome {
                 let force_redraw = matches!(outcome, KeyOutcome::Redraw);
                 if apply_outcome(terminal, ws, &mut link, outcome)? {
@@ -56,6 +64,10 @@ pub(crate) fn main_loop(
                 }
                 if force_redraw {
                     redraw.request(RedrawCause::Redraw);
+                    // `Terminal::clear` forces the next frame to re-measure the
+                    // backend, so the cached size must follow it: this is the
+                    // recovery path when a resize event never arrived.
+                    geometry.forget_size();
                 }
             }
             Ok(InputControl::Continue)
@@ -98,28 +110,19 @@ pub(crate) fn main_loop(
             }
         }
 
-        let size = terminal.size()?;
-        let screen = Rect::new(0, 0, size.width, size.height);
-        observe_terminal_size(&mut redraw, size.width, size.height);
+        // Cached: a resize event carries the new size, so only the first tick
+        // (and a full repaint) has to ask the backend at all.
+        let screen = geometry.screen(|| Ok(terminal.size()?))?;
+        observe_terminal_size(&mut redraw, screen.width, screen.height);
         if let Some(app) = ws.active() {
-            let layouts: Vec<(crate::backend::PaneId, u16, u16)> =
-                crate::ui::terminal_content_areas(app, screen, &cfg.layout)
-                    .into_iter()
-                    .map(|(id, area)| (id, area.height, area.width))
-                    .collect();
+            let layouts = geometry.pane_sizes(app, &cfg.layout, screen);
             let app = ws.active_mut().expect("active project checked above");
-            app.terminal.resize_visible_panes(&layouts);
+            // Still every tick: a session that owns the size is retried until it
+            // confirms, and the layout it is retried with is the cached one.
+            app.terminal.resize_visible_panes(layouts);
             app.terminal.sync_scroll();
         }
 
-        // Collected before the mutable borrow of the active project, since the
-        // tab row names every project while the body renders only one. Bounded
-        // by `MAX_PROJECTS`, so the per-frame clone is a handful of strings.
-        let tab_paths: Vec<String> = ws
-            .projects()
-            .iter()
-            .map(|p| p.repository_path().to_string())
-            .collect();
         let tab_attention: Vec<bool> = ws
             .projects()
             .iter()
@@ -140,7 +143,6 @@ pub(crate) fn main_loop(
             redraw.request(RedrawCause::RepoInputFocus);
         }
         let active_tab = ws.active_index();
-        let empty_notice = ws.empty_notice().cloned();
         let prefix_armed = ws.prefix_armed();
         // One colour for the session, so it is read off the workspace and the
         // empty screen is painted in it too — read before `render_parts` takes
@@ -148,6 +150,15 @@ pub(crate) fn main_loop(
         let accent = ws.current_accent();
 
         if redraw.take() {
+            // Only a drawn frame needs the tab row's names, and the empty
+            // screen's notice is only read when no project is open. Both used to
+            // be rebuilt on every idle tick as well.
+            let tab_paths: Vec<String> = ws
+                .projects()
+                .iter()
+                .map(|p| p.repository_path().to_string())
+                .collect();
+            let empty_notice = ws.empty_notice().cloned();
             let (app_opt, repo_input, help) = ws.render_parts();
             let tabs = crate::ui::Chrome {
                 repo_paths: &tab_paths,

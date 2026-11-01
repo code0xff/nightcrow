@@ -1,7 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { HotConfig } from "../../api";
 import type { Pane, Tab } from "../../types";
-import { useHotClock } from "../ui/useHotClock";
 import { useLogDecorations } from "./useLogDecorations";
 import { useLog } from "./useLog";
 import { useStatus } from "./useStatus";
@@ -51,7 +50,6 @@ export function useRepoData({
     paneRequestRef,
   });
   const hotWindowMs = hot?.enabled ? hot.window_secs * 1000 : 0;
-  const now = useHotClock(status?.files, hotWindowMs, clockSkewMs ?? 0);
   const log = useLog({
     repo,
     authed,
@@ -99,7 +97,9 @@ export function useRepoData({
   return {
     screen: { tab, setTab, filter, setFilter, filterOpen, setFilterOpen, pane, setPane },
     request: { paneRequestRef, bumpPaneRequest, clearPane },
-    status: { value: status, files, now, hotWindowMs },
+    // The hot clock lives in `StatusList`, where the fading rows are drawn: a
+    // tick there must not re-render the page and the terminal panel beside it.
+    status: { value: status, files, hotWindowMs, clockSkewMs: clockSkewMs ?? 0 },
     log: { ...log, decorations, visibleCommitFiles },
   };
 }

@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import type { PaneView } from "../../lib/terminal/terminalLayout";
 import type { PaneViewMode } from "../../lib/terminal/paneViewMode";
 import { terminalFontOptions } from "../../lib/terminal/termFont";
@@ -16,6 +17,14 @@ import {
 } from "../../lib/terminal/terminalReplay";
 import { sendTerminalMessage, type PaneSize } from "../../api/terminal";
 import type { ScreenScale } from "../ui/screenScale";
+import { createTitleThrottle } from "../../lib/terminal/titleThrottle";
+import type { TitleThrottle } from "../../lib/terminal/titleThrottle";
+import { enableWebglRenderer } from "../../lib/terminal/webglRenderer";
+import {
+  queueTerminalBarrier,
+  resetTerminalWrites,
+  writeTerminalData,
+} from "../../lib/terminal/terminalWrites";
 
 interface UseTerminalViewsArgs {
   panes: number[];
@@ -57,6 +66,15 @@ export function useTerminalViews({
   consumeLatches,
   setTitles,
 }: UseTerminalViewsArgs) {
+  // One per pane. Titles arrive on their own schedule (a shell prompt, a
+  // spinner, an editor's tab name), and each is a toolbar render: offer them
+  // through a throttle, and stop once the pane is gone.
+  const titleThrottlesRef = useRef(new Map<number, TitleThrottle>());
+  useEffect(() => {
+    const throttles = titleThrottlesRef.current;
+    return () => throttles.forEach((throttle) => throttle.cancel());
+  }, []);
+
   useEffect(() => {
     const font = terminalFontOptions(screenScale);
     for (const pane of panes) {
@@ -141,13 +159,25 @@ export function useTerminalViews({
           });
         },
       );
-      // Preserve the previous label when OSC provides an empty title.
+      const titles = createTitleThrottle((title) => {
+        setTitles((current) =>
+          current[pane] === title ? current : { ...current, [pane]: title },
+        );
+      });
+      titleThrottlesRef.current.set(pane, titles);
       term.onTitleChange((title) => {
         const cleaned = title.replace(/\s+/g, " ").trim();
+        // Preserve the previous label when OSC provides an empty title.
         if (!cleaned) return;
-        setTitles((current) => ({ ...current, [pane]: cleaned }));
+        titles.push(cleaned);
       });
       term.open(body);
+      // An optional GPU path over the DOM renderer xterm just opened. Loaded
+      // per terminal rather than once for the page: the addon paints one xterm's
+      // canvas, and a pane opened later is as likely to be the one a context
+      // budget can still afford. `enableWebglRenderer` leaves this pane on the
+      // renderer it already has when WebGL is unavailable or later lost.
+      enableWebglRenderer(term, () => new WebglAddon());
       // Before a byte is written: what follows was drawn against the PTY's
       // grid. An opened xterm starts at 80×24, and a hidden parser also needs
       // the confirmed grid before it consumes output; parsing at the default
@@ -177,7 +207,7 @@ export function useTerminalViews({
       if (queued) {
         for (const item of queued) {
           if (item instanceof Uint8Array) {
-            term.write(item);
+            writeTerminalData(term, item);
           } else {
             queueReplayEnd(term, view.replayGate, () => {
               if (
@@ -194,12 +224,15 @@ export function useTerminalViews({
         // its end. Queued behind the replay rather than run after the loop:
         // `write` parses on a later task, so scrolling here directly would
         // land on a buffer that had not finished growing.
-        term.write("", () => term.scrollToBottom());
+        queueTerminalBarrier(term, () => term.scrollToBottom());
       }
     }
 
     for (const [pane, view] of viewsRef.current) {
       if (!panes.includes(pane)) {
+        titleThrottlesRef.current.get(pane)?.cancel();
+        titleThrottlesRef.current.delete(pane);
+        resetTerminalWrites(view.term);
         view.term.dispose();
         viewsRef.current.delete(pane);
       }

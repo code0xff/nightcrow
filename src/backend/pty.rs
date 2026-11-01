@@ -2,7 +2,6 @@ use super::slot::{PaneSlot, PaneSlots};
 use super::{BackendEvent, PaneId, ResizeOutcome, TerminalBackend};
 use crate::config::ShellConfig;
 use crate::platform::process_tree::ProcessTree;
-use crate::platform::threading::try_timed_join;
 use anyhow::Result;
 use portable_pty::PtySize;
 use std::collections::BTreeMap;
@@ -17,6 +16,8 @@ use std::time::{Duration, Instant};
 mod io;
 #[path = "pty_spawn.rs"]
 mod spawn;
+
+mod reap;
 
 /// Reap window for PTY reader / wait threads. Bigger than the commit-log
 /// REAP_TIMEOUT because `read()` on a PTY master can stay blocked if a
@@ -55,12 +56,12 @@ pub(super) enum ExitPhase {
 }
 
 pub(super) struct PtyPane {
-    // Option wrapping lets Drop release the master and receiver before joining
-    // workers, so blocked output sends can switch to discard-drain.
+    // Option wrapping lets Drop release the receiver before the process is
+    // terminated, and hand the remaining handles to a reaper.
     pub(super) master: Option<Box<dyn portable_pty::MasterPty>>,
     input: Option<io::InputQueue>,
-    pub(super) killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
-    pub(super) process_tree: ProcessTree,
+    pub(super) killer: Option<Box<dyn portable_pty::ChildKiller + Send + Sync>>,
+    pub(super) process_tree: Option<ProcessTree>,
     pub(super) rx: Option<Receiver<PtyEvent>>,
     pub(super) reader_handle: Option<thread::JoinHandle<()>>,
     pub(super) writer_handle: Option<thread::JoinHandle<()>>,
@@ -76,30 +77,18 @@ impl Drop for PtyPane {
         // PTY is being torn down. A disconnected reader keeps draining to EOF.
         drop(self.rx.take());
         // Cancel queued input before terminating the process; a blocked
-        // in-flight write is handled by the bounded worker join below.
+        // in-flight write is handled by the reaper's bounded worker join.
         drop(self.input.take());
-        // Terminate the pane's process boundary before the PTY handles and
-        // waiter are reaped, so child jobs cannot outlive an explicit close.
-        if let Err(error) = self.process_tree.terminate() {
-            tracing::warn!(%error, "could not terminate pane process tree");
-        }
-        // Best-effort direct kill covers a child that exited before its tree
-        // termination raced with teardown.
-        let _ = self.killer.kill();
-        // Close the PTY boundary before joining; platform teardown normally
-        // releases blocked system calls, and every join remains bounded.
-        self.master.take();
-        if let Some(h) = self.writer_handle.take() {
-            try_timed_join(h, PTY_REAP_TIMEOUT);
-        }
-        // Bounded joins: a daemonized grandchild may keep the reader blocked
-        // on Unix, so detach rather than freezing pane teardown.
-        if let Some(h) = self.reader_handle.take() {
-            try_timed_join(h, PTY_REAP_TIMEOUT);
-        }
-        if let Some(h) = self.wait_handle.take() {
-            try_timed_join(h, PTY_REAP_TIMEOUT);
-        }
+        let mut reaper = reap::PaneReaper {
+            master: self.master.take(),
+            killer: self.killer.take(),
+            process_tree: self.process_tree.take(),
+            writer: self.writer_handle.take(),
+            reader: self.reader_handle.take(),
+            waiter: self.wait_handle.take(),
+        };
+        reaper.terminate();
+        crate::platform::threading::spawn_reaper("pane-reaper", move || reaper.reap());
     }
 }
 

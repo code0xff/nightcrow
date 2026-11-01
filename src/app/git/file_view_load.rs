@@ -13,9 +13,9 @@ impl App {
                     .git
                     .view
                     .tree
-                    .visible_rows()
-                    .into_iter()
-                    .nth(self.git.view.tree.selected)?;
+                    .rows()
+                    .get(self.git.view.tree.selected)
+                    .cloned()?;
                 if row.is_dir {
                     return None;
                 }

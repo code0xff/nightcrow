@@ -5,6 +5,14 @@ use crate::workspace::Workspace;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
+/// Whether this mouse event kind can change anything. Motion and drag reports
+/// are never forwarded to a pane and name no click target, so the router
+/// below has no arm for them; a caller can drop them before building the
+/// tab snapshots that only a real click reads.
+pub(crate) fn mouse_kind_acts(kind: MouseEventKind) -> bool {
+    !matches!(kind, MouseEventKind::Moved | MouseEventKind::Drag(_))
+}
+
 /// Route one mouse event. The project tab row is the only target with no
 /// project open, so it is resolved before the per-project handler.
 pub(crate) fn dispatch_mouse(

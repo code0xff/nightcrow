@@ -31,7 +31,7 @@ session_ttl_hours = 24
 # allowed_hosts = ["machine.tailnet.ts.net"]
 ```
 
-`bind` must be an IP address and `port` must be non-zero. `session_ttl_hours` accepts `0..=87600` hours; `0` means sessions do not expire on the server, while browser cookies still have a 400-day maximum. If neither credential is set, startup generates a random password, saves it to this file, and prints it once. `hashed_password` is an Argon2 PHC string and takes precedence over `password`. Login attempts are rate-limited, logout revokes the server-side token, and persisted tokens live in `~/.nightcrow/sessions`.
+`bind` must be an IP address and `port` must be non-zero. `session_ttl_hours` accepts `0..=87600` hours; `0` means sessions do not expire on the server, while browser cookies still have a 400-day maximum. If neither credential is set, startup generates a random password, saves it to this file, and prints it once. `hashed_password` is an Argon2 PHC string and takes precedence over `password`. Login attempts are rate-limited, logout revokes the server-side token, and persisted tokens live in `~/.nightcrow/sessions`. The store keeps at most 64 tokens; a login past that cap forgets the oldest.
 
 A loopback-bound viewer refuses requests whose `Host` is not a loopback name, so a page another site rebinds to `127.0.0.1` cannot reach it. A local HTTPS proxy such as `tailscale serve` forwards the name the browser used, so list that name in `allowed_hosts` (without a port; case is ignored). Off loopback the check does not apply and the list is not needed. The list is read when the daemon starts.
 
@@ -52,7 +52,7 @@ commit_log_page_size = 100
 commit_log_prefetch_threshold = 25
 ```
 
-Relative `dir` values are under the user's home/state directory. `rotation` is `daily`, `hourly`, or `size`; `max_size_mb` is `1..=10000` and is used for `size`; `max_days = 0` keeps logs forever, otherwise it is at most 3650 days. `level` is `error`, `warn`, `info`, `debug`, or `trace`. `prompt_log` records terminal prompt input line by line and is off by default. `commit_log_page_size` is `50..=500`; the prefetch threshold is `1..=page_size`.
+Relative `dir` values are under the user's home/state directory. `rotation` is `daily`, `hourly`, or `size`; `max_size_mb` is `1..=10000` and is used for `size`; `max_days = 0` keeps logs forever, otherwise it is at most 3650 days. Expired files are removed when logging starts and again whenever the log rotates, so a long-running daemon also stays within the limit. `level` is `error`, `warn`, `info`, `debug`, or `trace`. `prompt_log` records terminal prompt input line by line and is off by default. `commit_log_page_size` is `50..=500`; the prefetch threshold is `1..=page_size`.
 
 ## `[[startup_command]]`
 

@@ -3,13 +3,17 @@
 //! `TerminalState` in `runtime/terminal.rs`.
 
 use crate::app::{App, Focus, NoticeKind};
-use crate::runtime::terminal::TerminalFullscreen;
+use crate::runtime::terminal::{PollOutcome, TerminalFullscreen};
 
 impl App {
     pub fn poll_terminal(&mut self) -> bool {
         // `TerminalState::poll` only signals exited panes; re-clamping focus
         // and fullscreen when the active pane was one of them stays here.
-        let (exited, mut changed) = self.terminal.poll_with_activity();
+        let PollOutcome {
+            exited,
+            frame_changed,
+        } = self.terminal.poll_with_activity();
+        let mut changed = frame_changed;
         if !exited.is_empty() {
             self.clamp_active_pane_after_removal();
             changed = true;

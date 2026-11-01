@@ -133,24 +133,38 @@ impl App {
         if self.current_file_view_key().as_ref() != Some(&intent.key) {
             return;
         }
-        let mut file_view = FileViewState {
-            key: Some(intent.key),
-            anchor_line: intent.anchor,
-            ..Default::default()
-        };
         match reply.result {
             Ok(GitLoadPayload::File(content)) => {
+                // Reuse the open overlay's state on a same-key reload so its
+                // highlight cache can extend instead of replaying the file.
+                let mut file_view =
+                    if self.git.view.diff.file_view.key.as_ref() == Some(&intent.key) {
+                        std::mem::take(&mut self.git.view.diff.file_view)
+                    } else {
+                        FileViewState::default()
+                    };
+                file_view.key = Some(intent.key);
+                file_view.anchor_line = intent.anchor;
+                file_view.error = None;
+                file_view.scroll_x = 0;
                 file_view.set_content(content);
                 let initial = intent
                     .anchor
                     .map(|line| line.saturating_sub(1).saturating_sub(2))
                     .unwrap_or(0);
                 file_view.scroll = initial.min(file_view.max_scroll());
+                self.git.view.diff.file_view = file_view;
             }
-            Ok(_) => return,
-            Err(error) => file_view.error = Some(error),
+            Ok(_) => {}
+            Err(error) => {
+                self.git.view.diff.file_view = FileViewState {
+                    key: Some(intent.key),
+                    anchor_line: intent.anchor,
+                    error: Some(error),
+                    ..Default::default()
+                };
+            }
         }
-        self.git.view.diff.file_view = file_view;
     }
 
     fn apply_commit_files_reply(&mut self, reply: GitLoadReply) {

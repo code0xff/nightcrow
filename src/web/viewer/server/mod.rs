@@ -4,6 +4,7 @@
 //! lookup, then path validation. Git and I/O details are redacted from
 //! responses because they can contain absolute server paths.
 
+mod cap_warning;
 mod clone_routes;
 mod dispatch;
 mod edit_preview;
@@ -30,7 +31,6 @@ use std::time::Duration;
 pub const VIEWER_SESSION_COOKIE: &str = "nightcrow_viewer_session";
 
 pub(super) const SSE_HEARTBEAT: Duration = Duration::from_secs(15);
-pub(super) const TERM_POLL_TIMEOUT: Duration = Duration::from_millis(10);
 
 /// HTTP-only state. Repository and terminal ownership lives in SessionState,
 /// which the daemon and this transport share.

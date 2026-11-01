@@ -60,7 +60,7 @@ fn output_for(session: &TerminalSession, pane: PaneId) -> Vec<u8> {
         if let TerminalFrame::Output { pane: p, data } = frame
             && p == pane
         {
-            out.extend(data);
+            out.extend(data.iter().copied());
         }
     }
     out
