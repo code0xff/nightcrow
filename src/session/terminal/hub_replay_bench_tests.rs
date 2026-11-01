@@ -43,6 +43,14 @@ fn median(mut samples: Vec<std::time::Duration>) -> std::time::Duration {
     samples[samples.len() / 2]
 }
 
+/// A captured record's bytes, as the single buffer the build used to hand over.
+fn flatten(chunks: &[std::sync::Arc<[u8]>]) -> Vec<u8> {
+    chunks
+        .iter()
+        .flat_map(|chunk| chunk.iter().copied())
+        .collect()
+}
+
 #[test]
 #[ignore = "benchmark"]
 fn replay_build_at_full_caps() {
@@ -63,7 +71,7 @@ fn replay_build_at_full_caps() {
         assert!(
             old.iter()
                 .zip(&replays)
-                .all(|(old, replay)| *old == replay.record)
+                .all(|(old, replay)| *old == flatten(&replay.record))
         );
 
         let start = Instant::now();
