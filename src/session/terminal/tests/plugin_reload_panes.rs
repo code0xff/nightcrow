@@ -31,7 +31,7 @@ fn a_plugin_no_startup_pane_names_is_kept_while_it_watches_a_live_pane() {
         watch_on_signal: true,
         ..plugin_with_log(&f, "signal").0
     };
-    let mut plugins = Plugins::start(&f.cwd(), std::slice::from_ref(&watcher), &[]);
+    let mut plugins = Plugins::start(&f.cwd(), std::slice::from_ref(&watcher), &[], None);
     let pane = backend
         .open_pane(24, 80, Some("sleep 30"))
         .expect("open a pane");
@@ -79,7 +79,7 @@ fn a_replaced_plugin_does_not_leave_a_relaunch_hold_behind() {
         name: opt_in().plugin.clone().expect("the fixture opts in"),
         ..cfg
     };
-    let mut plugins = Plugins::start(&f.cwd(), std::slice::from_ref(&cfg), &[opt_in()]);
+    let mut plugins = Plugins::start(&f.cwd(), std::slice::from_ref(&cfg), &[opt_in()], None);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
         .expect("open a pane");
@@ -141,7 +141,7 @@ fn a_replacement_that_will_not_spawn_gives_up_the_panes_it_was_keeping() {
         name: opt_in().plugin.clone().expect("the fixture opts in"),
         ..cfg
     };
-    let mut plugins = Plugins::start(&f.cwd(), std::slice::from_ref(&cfg), &[opt_in()]);
+    let mut plugins = Plugins::start(&f.cwd(), std::slice::from_ref(&cfg), &[opt_in()], None);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
         .expect("open a pane");

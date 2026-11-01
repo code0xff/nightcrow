@@ -67,8 +67,10 @@ fn a_signal_that_arrives_before_the_wait_is_not_lost() {
         Duration::from_secs(5),
     );
     let waited = started.elapsed();
+    // Not the full 30 ms: Windows timer granularity can end a timed wait early.
+    // Returning at once would still be well under this.
     assert!(
-        waited >= Duration::from_millis(30),
+        waited >= Duration::from_millis(10),
         "a spent signal must not satisfy a second wait, waited {waited:?}"
     );
 }
@@ -92,8 +94,10 @@ fn an_expired_deadline_returns_at_once_and_the_cap_bounds_every_wait() {
         Duration::from_millis(20),
     );
     let waited = started.elapsed();
+    // The lower bound is loose because Windows timer granularity can end a timed
+    // condvar wait a few milliseconds early.
     assert!(
-        (Duration::from_millis(20)..Duration::from_secs(1)).contains(&waited),
+        (Duration::from_millis(5)..Duration::from_secs(1)).contains(&waited),
         "the cap must shorten a later deadline, waited {waited:?}"
     );
 }

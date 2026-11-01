@@ -61,7 +61,7 @@ fn a_plugin_no_pane_opted_into_is_never_launched() {
     // A host with no pane to watch is a child process that can never be given
     // anything to do, so declaring a plugin must not by itself start one.
     let f = fixture();
-    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[]);
+    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[], None);
 
     assert!(
         !plugins.adopt(1, PLUGIN),
@@ -74,7 +74,7 @@ fn a_disabled_plugin_is_never_launched_even_when_a_pane_opted_in() {
     let f = fixture();
     let mut off = recorder(PLUGIN, &f.log);
     off.enabled = false;
-    let mut plugins = Plugins::start(&f.cwd(), &[off], &[opt_in()]);
+    let mut plugins = Plugins::start(&f.cwd(), &[off], &[opt_in()], None);
 
     assert!(!plugins.adopt(1, PLUGIN));
 }
@@ -87,7 +87,7 @@ fn a_plugin_that_will_not_launch_leaves_its_panes_unmanaged() {
     let f = fixture();
     let mut broken = recorder(PLUGIN, &f.log);
     broken.command = "/nonexistent/nightcrow-test-plugin".to_string();
-    let mut plugins = Plugins::start(&f.cwd(), &[broken], &[opt_in()]);
+    let mut plugins = Plugins::start(&f.cwd(), &[broken], &[opt_in()], None);
 
     assert!(!plugins.adopt(1, PLUGIN));
     assert_eq!(plugins.owner(1), None);
@@ -97,7 +97,7 @@ fn a_plugin_that_will_not_launch_leaves_its_panes_unmanaged() {
 fn a_command_for_a_pane_that_did_not_opt_in_is_refused() {
     let f = fixture();
     let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
-    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()]);
+    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()], None);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
         .expect("open a pane");
@@ -117,7 +117,7 @@ fn a_command_for_a_pane_that_did_not_opt_in_is_refused() {
 fn a_command_naming_a_stale_generation_is_refused_and_leaves_the_replacement_alone() {
     let f = fixture();
     let mut backend = PtyBackend::new(f.cwd(), ShellConfig::default());
-    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()]);
+    let mut plugins = Plugins::start(&f.cwd(), &[recorder(PLUGIN, &f.log)], &[opt_in()], None);
     let pane = backend
         .open_pane(ROWS, COLS, Some(LONG_RUNNING))
         .expect("open a pane");
