@@ -1,72 +1,14 @@
 //! A page on the other end of a real socket: what keeps it, and what ends it.
 
-use super::{Timing, WAKES, run};
-use crate::session::size_owner::ViewerId;
-use crate::session::terminal::{TerminalHub, TerminalSession};
-use std::net::{Shutdown, TcpListener, TcpStream};
+use super::super::terminal_connection::{WAKES, run};
+use super::super::terminal_liveness::Timing;
+use super::super::terminal_pipe::{GUARD_WAKES, READ_GUARD};
+use super::fixture::{Wired, short, wired, wired_with};
+use std::net::Shutdown;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tungstenite::Message;
-use tungstenite::protocol::{Role, WebSocket};
-
-/// What both ends of one connection look like before the loop starts: the page
-/// side, the served side, and the handles the hub and a test use to cut it off.
-struct Wired {
-    _dir: tempfile::TempDir,
-    hub: Arc<TerminalHub>,
-    served: WebSocket<TcpStream>,
-    page: WebSocket<TcpStream>,
-    session: TerminalSession,
-    cut_off: TcpStream,
-}
-
-fn wired() -> Wired {
-    let dir = tempfile::TempDir::new().expect("a temporary directory");
-    let hub = TerminalHub::spawn(
-        &dir.path().to_string_lossy(),
-        Vec::new(),
-        Vec::new(),
-        false,
-        crate::config::ShellConfig::default(),
-        Arc::default(),
-    );
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
-    let page_stream = TcpStream::connect(listener.local_addr().unwrap()).expect("a dial");
-    let (served_stream, _) = listener.accept().expect("an inbound connection");
-    // What `conn::read_request` leaves: no read timeout of its own, and the
-    // poll interval `serve_terminal` installs for the connection loop.
-    served_stream
-        .set_read_timeout(Some(Duration::from_millis(10)))
-        .expect("a read timeout");
-    served_stream
-        .set_write_timeout(Some(Duration::from_secs(5)))
-        .expect("a write timeout");
-    page_stream
-        .set_read_timeout(Some(Duration::from_millis(20)))
-        .expect("a read timeout");
-    let cut_off = served_stream.try_clone().expect("a socket clone");
-    let session = hub.connect(
-        ViewerId::Browser("liveness-test".to_string()),
-        true,
-        Some(served_stream.try_clone().expect("a socket clone")),
-    );
-    Wired {
-        _dir: dir,
-        hub,
-        served: WebSocket::from_raw_socket(served_stream, Role::Server, None),
-        page: WebSocket::from_raw_socket(page_stream, Role::Client, None),
-        session,
-        cut_off,
-    }
-}
-
-fn short() -> Timing {
-    Timing {
-        ping_after: Duration::from_millis(100),
-        silence_limit: Duration::from_millis(400),
-    }
-}
 
 /// No read, no write, no pong: the page's network path is gone even though its
 /// socket still exists on this side.
@@ -74,7 +16,7 @@ fn short() -> Timing {
 fn a_page_that_stops_answering_is_closed() {
     let wired = wired();
     let started = Instant::now();
-    run(wired.served, wired.session, short());
+    run(wired.served, wired.link, wired.session, short());
     let elapsed = started.elapsed();
 
     assert!(
@@ -100,6 +42,7 @@ fn an_answered_ping_keeps_the_socket_open() {
     let Wired {
         mut page,
         served,
+        link,
         session,
         hub,
         ..
@@ -127,7 +70,7 @@ fn an_answered_ping_keeps_the_socket_open() {
     });
 
     let started = Instant::now();
-    run(served, session, short());
+    run(served, link, session, short());
     let elapsed = started.elapsed();
     answering.join().expect("the answering page panicked");
 
@@ -149,6 +92,7 @@ fn ordinary_input_keeps_the_socket_open() {
     let Wired {
         mut page,
         served,
+        link,
         session,
         hub,
         ..
@@ -168,7 +112,7 @@ fn ordinary_input_keeps_the_socket_open() {
     });
 
     let started = Instant::now();
-    run(served, session, short());
+    run(served, link, session, short());
     let elapsed = started.elapsed();
     typing.join().expect("the typing page panicked");
 
@@ -184,6 +128,7 @@ fn a_page_that_closes_its_socket_ends_the_loop_at_once() {
     let Wired {
         mut page,
         served,
+        link,
         session,
         hub,
         ..
@@ -192,11 +137,36 @@ fn a_page_that_closes_its_socket_ends_the_loop_at_once() {
 
     let started = Instant::now();
     // The production timings, so nothing but the close frame can end this.
-    run(served, session, Timing::default());
+    run(served, link, session, Timing::default());
 
     assert!(
         started.elapsed() < Duration::from_secs(5),
         "a page that said goodbye was kept waiting"
+    );
+    assert_eq!(hub.client_count(), 0);
+    hub.stop();
+}
+
+/// A page that dropped its connection without a close frame: the reader sees
+/// the end and the writer must follow it, rather than wait out the silence.
+#[test]
+fn a_page_that_vanishes_without_a_close_ends_the_loop() {
+    let Wired {
+        page,
+        served,
+        link,
+        session,
+        hub,
+        ..
+    } = wired();
+    drop(page);
+
+    let started = Instant::now();
+    run(served, link, session, Timing::default());
+
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "a vanished page was left waiting"
     );
     assert_eq!(hub.client_count(), 0);
     hub.stop();
@@ -209,6 +179,7 @@ fn a_page_that_closes_its_socket_ends_the_loop_at_once() {
 fn a_connection_cut_off_by_the_hub_ends_the_loop() {
     let Wired {
         served,
+        link,
         session,
         cut_off,
         hub,
@@ -218,7 +189,7 @@ fn a_connection_cut_off_by_the_hub_ends_the_loop() {
     let finished = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&finished);
     let runner = std::thread::spawn(move || {
-        run(served, session, Timing::default());
+        run(served, link, session, Timing::default());
         flag.store(true, Ordering::Release);
     });
 
@@ -232,28 +203,34 @@ fn a_connection_cut_off_by_the_hub_ends_the_loop() {
         .expect("could not cut the connection off");
     runner.join().expect("the connection thread panicked");
 
+    // `run` joins both helper threads before it returns, so a finished runner
+    // is also the proof that neither was left behind.
     assert_eq!(hub.client_count(), 0, "a cut-off client must be released");
     hub.stop();
 }
 
-/// Not a pass/fail assertion: it reports how often one idle socket wakes its
-/// connection thread in a second. Run it alone and compare the number between
-/// the polling loop and the event-driven one.
+/// Not a pass/fail assertion: it reports what one idle socket still costs in
+/// wake-ups per second. The writer's count is its loop passes; the reader's is
+/// its guard-interval wake-ups, the price of being able to end a read that
+/// cannot be interrupted.
 #[test]
 #[ignore = "measurement: prints wakeups instead of asserting them"]
 fn idle_socket_wakeups_in_one_second() {
     let Wired {
         served,
+        link,
         session,
         cut_off,
         hub,
         page: _page,
         ..
-    } = wired();
+    } = wired_with(READ_GUARD);
     WAKES.store(0, Ordering::Relaxed);
+    GUARD_WAKES.store(0, Ordering::Relaxed);
     let runner = std::thread::spawn(move || {
         run(
             served,
+            link,
             session,
             Timing {
                 ping_after: Duration::from_secs(60),
@@ -262,10 +239,11 @@ fn idle_socket_wakeups_in_one_second() {
         );
     });
     std::thread::sleep(Duration::from_secs(1));
-    let wakes = WAKES.load(Ordering::Relaxed);
+    let writer = WAKES.load(Ordering::Relaxed);
+    let reader = GUARD_WAKES.load(Ordering::Relaxed);
     let _ = cut_off.shutdown(Shutdown::Both);
     runner.join().expect("the connection thread panicked");
 
-    println!("idle socket wakeups in 1 s: {wakes}");
+    println!("idle socket wakeups in 1 s: writer {writer}, reader {reader}");
     hub.stop();
 }

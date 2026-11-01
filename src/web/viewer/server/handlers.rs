@@ -2,8 +2,11 @@ mod http;
 mod repository;
 mod sse;
 mod terminal;
+mod terminal_batch;
+mod terminal_connection;
 mod terminal_errors;
 mod terminal_liveness;
+mod terminal_pipe;
 
 pub(super) use super::http_util::encode;
 pub(super) use http::{optional_count, optional_oid, required_oid, required_path};

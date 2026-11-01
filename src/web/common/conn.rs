@@ -210,13 +210,12 @@ pub const MAX_WS_MESSAGE_BYTES: usize = 1024 * 1024;
 ///
 /// Shared by both servers: the handshake needs only the request head and the
 /// socket, so the mirror and the viewer differ only in what they do with the
-/// resulting connection.
-pub fn websocket_handshake(
-    mut stream: TcpStream,
+/// resulting connection. Generic over the stream because a connection may wrap
+/// it — the viewer's terminal socket separates its read and write halves.
+pub fn websocket_handshake<S: std::io::Read + std::io::Write>(
+    mut stream: S,
     head: &RequestHead,
-) -> Option<tungstenite::WebSocket<TcpStream>> {
-    use std::io::Write;
-
+) -> Option<tungstenite::WebSocket<S>> {
     let Some(key) = head.header("sec-websocket-key") else {
         let _ = stream.write_all(&http::response(
             "400 Bad Request",

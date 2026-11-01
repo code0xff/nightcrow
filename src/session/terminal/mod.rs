@@ -45,7 +45,7 @@ mod startup_run;
 #[cfg(test)]
 pub use frame::decode_output;
 pub use frame::{ClientMessage, PaneSize, TerminalFrame, encode_output};
-pub use session::TerminalSession;
+pub use session::{FrameWait, TerminalSession};
 
 use crate::session::size_owner::SizeOwnership;
 use hub_helpers::{Command, PendingResize, Shared};

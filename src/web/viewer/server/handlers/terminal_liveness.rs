@@ -82,6 +82,19 @@ impl Liveness {
             Step::Wait
         }
     }
+
+    /// How long silence is allowed to last before the socket is closed.
+    pub fn silence_limit(&self) -> Duration {
+        self.timing.silence_limit
+    }
+
+    /// When [`step`](Self::step) would change without further traffic. A
+    /// connection that waits until here is not polling: it is asleep until
+    /// something arrives or the next decision is due.
+    pub fn next_deadline(&self) -> Instant {
+        (self.last_outbound + self.timing.ping_after)
+            .min(self.last_inbound + self.timing.silence_limit)
+    }
 }
 
 #[cfg(test)]

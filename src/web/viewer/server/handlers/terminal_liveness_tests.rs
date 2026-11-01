@@ -77,3 +77,23 @@ fn the_silence_limit_is_answered_with_a_close_not_another_ping() {
     let liveness = Liveness::new(timing(), start);
     assert_eq!(liveness.step(start + Duration::from_secs(30)), Step::Close);
 }
+
+#[test]
+fn the_deadline_is_whichever_decision_comes_first() {
+    let start = Instant::now();
+
+    let mut quiet = Liveness::new(timing(), start);
+    assert_eq!(quiet.next_deadline(), start + Duration::from_secs(15));
+
+    // An answer moves only the silence clock, so the ping is still the next
+    // thing due — and it is already overdue here.
+    quiet.heard(start + Duration::from_secs(20));
+    assert_eq!(quiet.next_deadline(), start + Duration::from_secs(15));
+
+    quiet.sent(start + Duration::from_secs(20));
+    assert_eq!(
+        quiet.next_deadline(),
+        start + Duration::from_secs(35),
+        "after a ping and an answer, both clocks have moved"
+    );
+}
