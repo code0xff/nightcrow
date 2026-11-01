@@ -4,6 +4,7 @@
 //! lookup, then path validation. Git and I/O details are redacted from
 //! responses because they can contain absolute server paths.
 
+mod cap_warning;
 mod clone_routes;
 mod dispatch;
 mod edit_preview;

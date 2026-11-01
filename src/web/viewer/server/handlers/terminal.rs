@@ -1,7 +1,9 @@
 use super::super::mutations::lookup_repo;
 use super::super::{SSE_HEARTBEAT, TERM_POLL_TIMEOUT, ViewerState};
+use super::terminal_errors::{note_end, stalled_not_gone};
+use super::terminal_liveness::{Liveness, Step, Timing};
 use crate::session::size_owner::ViewerId;
-use crate::session::terminal::{self, ClientMessage, TerminalFrame};
+use crate::session::terminal::{self, ClientMessage, TerminalFrame, TerminalSession};
 use crate::web::common::conn;
 use std::io::Write;
 use std::net::TcpStream;
@@ -49,37 +51,11 @@ fn anonymous_viewer() -> String {
     format!("conn-{}", NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
-/// Whether a failed socket operation leaves the connection usable.
-///
-/// A timeout is not a departure: it surfaces as `WouldBlock` on macOS and
-/// `TimedOut` on Linux, and ending the connection there cost a page that
-/// stopped reading for fifteen seconds (a phone asleep, a tunnel
-/// renegotiating) every pane replayed from scratch. tungstenite draws the
-/// same line: an `Io` error is fatal "except for WouldBlock", and the frame
-/// that could not go out stays in its write buffer for the next flush.
-///
-/// A client that has genuinely stopped keeping up is still cut off — by the
-/// hub, once its queue fills (`broadcast_locked`). That is where the cap
-/// belongs; a single slow write is not evidence of one.
-fn stalled_not_gone(err: &tungstenite::Error) -> bool {
-    matches!(
-        err,
-        tungstenite::Error::Io(err)
-            if matches!(
-                err.kind(),
-                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-            )
-    )
-}
-
-/// Say why a terminal socket ended.
-///
-/// At INFO, and unconditional: the page answers a closed socket by replaying
-/// every pane from scratch, which a person sees, and nothing else in the log
-/// says it happened.
-fn note_end(err: &tungstenite::Error, during: &'static str) {
-    tracing::info!(%err, during, "viewer: terminal socket ended");
-}
+/// Count the passes a connection makes, so a test can show that an idle socket
+/// no longer wakes its thread on a timer. Test-only: the loop's real job is
+/// visible in what it sends, not in how often it looks.
+#[cfg(test)]
+pub(super) static WAKES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Hand this connection to the repository's terminal hub.
 ///
@@ -110,7 +86,7 @@ pub(in crate::web::viewer::server) fn serve_terminal(
     // Taken before the stream is moved into the websocket, which owns it from
     // there on.
     let evict_handle = stream.try_clone();
-    let Some(mut ws) = conn::websocket_handshake(stream, head) else {
+    let Some(ws) = conn::websocket_handshake(stream, head) else {
         return;
     };
     // `claim` is the page saying a person just opened it, as opposed to a
@@ -145,12 +121,26 @@ pub(in crate::web::viewer::server) fn serve_terminal(
         "viewer: terminal socket attached"
     );
 
+    run(ws, session, Timing::default());
+}
+
+/// The connection's whole life: pump this client's frames out, listen for its
+/// input, and end the socket once neither side is there.
+///
+/// `timing` is the caller's so a test can watch a timeout elapse quickly; the
+/// only production value is [`Timing::default`].
+fn run(mut ws: tungstenite::WebSocket<TcpStream>, session: TerminalSession, timing: Timing) {
+    let mut liveness = Liveness::new(timing, Instant::now());
     // Set when a write could not go out in full. tungstenite is then holding
     // the rest, and only a later flush moves it -- so this has to be retried
     // even if no new output ever arrives.
     let mut unflushed = false;
     loop {
+        #[cfg(test)]
+        WAKES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         let mut wrote = false;
+        let mut wrote_anything = false;
         let mut batch_frames = 0;
         let mut batch_bytes = 0;
         let mut batch_started: Option<Instant> = None;
@@ -169,6 +159,7 @@ pub(in crate::web::viewer::server) fn serve_terminal(
             match ws.write(message) {
                 Ok(()) => {
                     wrote = true;
+                    wrote_anything = true;
                     batch_frames += 1;
                     batch_bytes += len;
                     let started = *batch_started.get_or_insert_with(Instant::now);
@@ -209,19 +200,65 @@ pub(in crate::web::viewer::server) fn serve_terminal(
                 Err(err) => return note_end(&err, "flush"),
             }
         }
+        if wrote_anything {
+            liveness.sent(Instant::now());
+        }
 
-        match ws.read() {
-            Ok(Message::Text(text)) => match serde_json::from_str::<ClientMessage>(&text) {
-                Ok(message) => session.dispatch(message),
-                // A malformed frame is dropped, not fatal: a client bug should
-                // not take the terminal down with it.
-                Err(err) => tracing::debug!(%err, "viewer: bad terminal message"),
-            },
-            Ok(Message::Close(_)) => {
-                tracing::info!("viewer: terminal socket closed by the page");
+        match liveness.step(Instant::now()) {
+            Step::Wait => {}
+            Step::Ping => {
+                // Only `WouldBlock`/`TimedOut` are recoverable; anything else
+                // means the socket is gone and there is nobody to ask.
+                match ws.write(Message::Ping(Vec::new().into())) {
+                    Ok(()) => match ws.flush() {
+                        Ok(()) => liveness.sent(Instant::now()),
+                        Err(err) if stalled_not_gone(&err) => {
+                            // The ping is in the write buffer; the next flush
+                            // sends it. Recording it now keeps the loop from
+                            // queueing another on every pass.
+                            liveness.sent(Instant::now());
+                            unflushed = true;
+                        }
+                        Err(err) => return note_end(&err, "ping"),
+                    },
+                    Err(err) if stalled_not_gone(&err) => liveness.sent(Instant::now()),
+                    Err(err) => return note_end(&err, "ping"),
+                }
+            }
+            Step::Close => {
+                // The page has sent nothing at all for two intervals, and a
+                // ping did not bring an answer. Closing releases the hub
+                // client, this connection's queue, and its slot in the
+                // viewer's connection cap; the page reconnects and replays.
+                tracing::warn!(
+                    silence = ?timing.silence_limit,
+                    "viewer: terminal socket stopped answering; closing"
+                );
+                let _ = ws.close(None);
                 return;
             }
-            Ok(_) => {}
+        }
+
+        match ws.read() {
+            Ok(message) => {
+                liveness.heard(Instant::now());
+                match message {
+                    Message::Text(text) => match serde_json::from_str::<ClientMessage>(&text) {
+                        Ok(message) => session.dispatch(message),
+                        // A malformed frame is dropped, not fatal: a client bug
+                        // should not take the terminal down with it.
+                        Err(err) => tracing::debug!(%err, "viewer: bad terminal message"),
+                    },
+                    Message::Close(_) => {
+                        tracing::info!("viewer: terminal socket closed by the page");
+                        return;
+                    }
+                    // A pong is the answer a ping asked for; a ping is the page
+                    // asking the same of us. Either is proof the path carries
+                    // frames, which `heard` has already recorded.
+                    _ => {}
+                }
+            }
             // A poll timeout surfaces as WouldBlock on macOS and TimedOut on
             // Linux; neither means the client is gone.
             Err(err) if stalled_not_gone(&err) => {}
@@ -232,90 +269,9 @@ pub(in crate::web::viewer::server) fn serve_terminal(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::web::common::http::RequestHead;
+#[path = "terminal_tests.rs"]
+mod tests;
 
-    fn head(query: &str) -> RequestHead {
-        crate::web::common::http::parse_request_head(&format!(
-            "GET /ws/term?{query} HTTP/1.1\r\nHost: h\r\n\r\n"
-        ))
-        .expect("a well-formed request line")
-    }
-
-    #[test]
-    fn a_page_that_names_itself_is_taken_at_its_word() {
-        assert_eq!(
-            browser_viewer(&head("repo=r1&viewer=tab-9f2c")),
-            ViewerId::Browser("tab-9f2c".to_string())
-        );
-    }
-
-    /// The whole point of the id is that the same page keeps it across sockets.
-    #[test]
-    fn the_same_page_is_the_same_viewer_on_every_socket() {
-        assert_eq!(
-            browser_viewer(&head("repo=r1&viewer=tab-1")),
-            browser_viewer(&head("repo=r2&viewer=tab-1")),
-        );
-    }
-
-    /// A stale bundle, or something that is not a page at all. It still works --
-    /// it just behaves as a browser did before it could name itself.
-    #[test]
-    fn a_socket_with_no_usable_id_gets_one_of_its_own() {
-        let long = "a".repeat(MAX_VIEWER_ID + 1);
-        for query in [
-            "repo=r1".to_string(),
-            "repo=r1&viewer=".to_string(),
-            "repo=r1&viewer=has%20space".to_string(),
-            "repo=r1&viewer=semi;colon".to_string(),
-            format!("repo=r1&viewer={long}"),
-        ] {
-            let first = browser_viewer(&head(&query));
-            let second = browser_viewer(&head(&query));
-            assert_ne!(first, second, "each must be its own screen: {query}");
-        }
-    }
-
-    #[test]
-    fn an_id_at_the_cap_is_still_accepted() {
-        let id = "a".repeat(MAX_VIEWER_ID);
-        assert_eq!(
-            browser_viewer(&head(&format!("repo=r1&viewer={id}"))),
-            ViewerId::Browser(id)
-        );
-    }
-
-    fn io(kind: std::io::ErrorKind) -> tungstenite::Error {
-        tungstenite::Error::Io(std::io::Error::from(kind))
-    }
-
-    /// The write timeout expiring on a page that stopped reading. Ending the
-    /// connection there costs it every pane, replayed from scratch, for a stall
-    /// it would have ridden out. macOS reports one kind, Linux the other.
-    #[test]
-    fn an_operation_that_timed_out_leaves_the_connection_usable() {
-        for kind in [std::io::ErrorKind::WouldBlock, std::io::ErrorKind::TimedOut] {
-            assert!(
-                stalled_not_gone(&io(kind)),
-                "{kind:?} is a stall, not a end"
-            );
-        }
-    }
-
-    #[test]
-    fn a_socket_that_actually_failed_ends_the_connection() {
-        for err in [
-            io(std::io::ErrorKind::BrokenPipe),
-            io(std::io::ErrorKind::ConnectionReset),
-            tungstenite::Error::ConnectionClosed,
-            tungstenite::Error::AlreadyClosed,
-        ] {
-            assert!(
-                !stalled_not_gone(&err),
-                "{err} is not something to wait out"
-            );
-        }
-    }
-}
+#[cfg(test)]
+#[path = "terminal_socket_tests.rs"]
+mod socket_tests;

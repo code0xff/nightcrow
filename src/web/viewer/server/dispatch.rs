@@ -1,3 +1,4 @@
+use super::cap_warning::CapWarning;
 use super::clone_routes;
 use super::http_util::{json_error, json_response, text_response};
 use super::mutations::{
@@ -16,12 +17,28 @@ use std::sync::Arc;
 use std::time::Instant;
 
 pub(super) fn accept_loop(listener: TcpListener, state: Arc<ViewerState>) {
+    let mut cap_warning = CapWarning::new();
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
+        // A page whose network path vanished leaves a socket that never reports
+        // an error, so let the OS find out instead. Failing to ask is worth a
+        // line, not a refusal: liveness pings still cover the connection.
+        if let Err(err) = crate::platform::net::enable_keepalive(&stream) {
+            tracing::debug!(%err, "viewer: could not enable TCP keepalive");
+        }
         let Some(slot) =
             ConnectionSlot::acquire(&state.connections, limits::MAX_VIEWER_CONNECTIONS)
         else {
-            tracing::debug!("viewer: refusing connection over cap");
+            // Only the peer address, and only when the burst starts: the
+            // connection being refused has told us nothing else.
+            if let Some(dropped) = cap_warning.hit(Instant::now()) {
+                tracing::warn!(
+                    peer = ?stream.peer_addr().ok(),
+                    limit = limits::MAX_VIEWER_CONNECTIONS,
+                    dropped,
+                    "viewer: refusing connections over cap"
+                );
+            }
             continue;
         };
         let state = Arc::clone(&state);
