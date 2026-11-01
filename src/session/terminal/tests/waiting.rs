@@ -26,13 +26,22 @@ pub(in crate::session::terminal) fn wait_for<T>(mut take: impl FnMut() -> Option
 }
 
 /// Pull frames until one satisfies `want`, ignoring the rest.
+///
+/// A skipped frame is followed at once by the next read rather than a sleep:
+/// `next_frame` already waits when nothing is queued, and pausing after each
+/// frame skipped lets a pane that is already producing fill the client's queue
+/// and get the client cut off before the caller starts reading.
 pub(in crate::session::terminal) fn next_matching(
     session: &TerminalSession,
     mut want: impl FnMut(&TerminalFrame) -> bool,
 ) -> Option<TerminalFrame> {
-    wait_for(|| {
-        session
-            .next_frame(Duration::from_millis(50))
-            .filter(|f| want(f))
-    })
+    let deadline = Instant::now() + SHELL_TEST_DEADLINE;
+    while Instant::now() < deadline {
+        if let Some(frame) = session.next_frame(Duration::from_millis(50))
+            && want(&frame)
+        {
+            return Some(frame);
+        }
+    }
+    None
 }

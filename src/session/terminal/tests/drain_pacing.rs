@@ -10,11 +10,11 @@ use crate::session::terminal::{FrameWait, TerminalHub, TerminalSession};
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
-const BURST: &str = "yes xxxxxxxxxxxxxxx | head -c 8388608; printf nightcrow-burst-done";
+const BURST: &str = "yes xxxxxxxxxxxxxxx | head -c 2097152; printf nightcrow-burst-done";
 #[cfg(windows)]
 const BURST: &str = concat!(
     "$out=[Console]::OpenStandardOutput(); ",
-    "$bytes=[Text.Encoding]::ASCII.GetBytes(('x' * 8388608)); ",
+    "$bytes=[Text.Encoding]::ASCII.GetBytes(('x' * 2097152)); ",
     "$out.Write($bytes,0,$bytes.Length); $out.Flush(); ",
     "$marker=[Text.Encoding]::ASCII.GetBytes('nightcrow-burst-done'); ",
     "$out.Write($marker,0,$marker.Length); $out.Flush()"
@@ -24,9 +24,12 @@ const MARKER: &[u8] = b"nightcrow-burst-done";
 const DEADLINE: Duration = Duration::from_secs(60);
 
 /// Time spent per frame, well inside the polled ceiling of one 64-event budget
-/// per 8 ms (one frame per 125 µs). Before the ceiling was kept across passes, a
-/// Linux client this slow was cut off within the first 30 ms of the burst.
-const PER_FRAME: Duration = Duration::from_micros(50);
+/// per 8 ms (one frame per 125 µs) even with a debug build's own per-frame cost.
+/// Before the ceiling was kept across passes, a Linux client this slow was cut off
+/// within the first 30 ms of the burst. macOS delivers PTY output in small chunks,
+/// so a debug client there runs close to the ceiling, and a margin much smaller
+/// than this one turns scheduling noise into a cut-off.
+const PER_FRAME: Duration = Duration::from_micros(20);
 
 enum Outcome {
     Marker,
