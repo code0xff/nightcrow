@@ -13,6 +13,11 @@ use tungstenite::protocol::{Role, WebSocket};
 /// still leaving the reader parked between reads rather than spinning.
 const GUARD: Duration = Duration::from_millis(20);
 
+/// Short enough that a stalled write surfaces in a test instead of parking the
+/// writer for the production timeout (15 s), while still far longer than any
+/// loopback write here needs.
+const WRITE_TIMEOUT: Duration = Duration::from_millis(50);
+
 /// What one connection looks like before the loop starts: the page's end, the
 /// writer's, the threads feeding it, and the handles the hub and a test use to
 /// cut it off.
@@ -47,7 +52,7 @@ pub(super) fn wired_with(guard: Duration) -> Wired {
     let page_stream = TcpStream::connect(listener.local_addr().unwrap()).expect("a dial");
     let (served_stream, _) = listener.accept().expect("an inbound connection");
     served_stream
-        .set_write_timeout(Some(Duration::from_secs(5)))
+        .set_write_timeout(Some(WRITE_TIMEOUT))
         .expect("a write timeout");
     page_stream
         .set_read_timeout(Some(Duration::from_millis(20)))

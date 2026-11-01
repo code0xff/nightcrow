@@ -95,27 +95,25 @@ impl Connection {
             #[cfg(test)]
             WAKES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-            // Everything already waiting leaves in one flush.
-            //
-            // Not while tungstenite still holds bytes, though: a client that
-            // stopped reading must back up in the hub's own queue, whose
-            // overflow is what ends it, rather than in this thread's memory.
-            if !self.unflushed {
-                loop {
-                    match self.link.try_next() {
-                        Waiting::Event(event) => {
-                            if let Some(end) = self.apply(event) {
-                                return end;
-                            }
-                            if self.batch.due()
-                                && let Some(end) = self.flush()
-                            {
-                                return end;
-                            }
+            // Everything already waiting leaves in one flush — until a write
+            // stalls. Then nothing more leaves the hub: tungstenite's write
+            // buffer is unbounded, so dequeuing through it would turn a client
+            // that stopped reading into this thread's memory. Backing up in the
+            // hub's own bounded queue is what ends such a client.
+            while !self.unflushed {
+                match self.link.try_next() {
+                    Waiting::Event(event) => {
+                        if let Some(end) = self.apply(event) {
+                            return end;
                         }
-                        Waiting::Empty => break,
-                        Waiting::Closed => return End::Hub,
+                        if self.batch.due()
+                            && let Some(end) = self.flush()
+                        {
+                            return end;
+                        }
                     }
+                    Waiting::Empty => break,
+                    Waiting::Closed => return End::Hub,
                 }
             }
             if (self.batch.queued() || self.unflushed)

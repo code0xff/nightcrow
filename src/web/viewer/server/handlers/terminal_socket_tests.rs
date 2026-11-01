@@ -198,6 +198,62 @@ fn a_page_watching_a_stream_still_answers_pings_and_stays_open() {
     hub.stop();
 }
 
+/// A page that never reads must not be able to make the writer hold its frames:
+/// once a write stalls, the hub's own bounded queue fills and its overflow is
+/// what ends the connection, long before the silence limit would.
+#[test]
+fn a_page_that_never_reads_is_cut_off_by_the_hub() {
+    let Wired {
+        served,
+        link,
+        session,
+        hub,
+        page: _page,
+        ..
+    } = wired();
+
+    let finished = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&finished);
+    let runner = std::thread::spawn(move || {
+        run(served, link, session, Timing::default());
+        flag.store(true, Ordering::Release);
+    });
+
+    // Large frames fill the loopback socket quickly, so the writer is still
+    // stalled while the hub has a backlog to hand it.
+    let data: Arc<[u8]> = vec![b'x'; 256 * 1024].into();
+    let started = Instant::now();
+    while hub.client_count() > 0 && started.elapsed() < Duration::from_secs(5) {
+        hub.test_broadcast(TerminalFrame::Output {
+            pane: 1,
+            data: Arc::clone(&data),
+        });
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    assert_eq!(
+        hub.client_count(),
+        0,
+        "the hub must cut off a page that stopped reading, instead of the writer buffering for it"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "the overflow took longer than the whole test budget: {:?}",
+        started.elapsed()
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !finished.load(Ordering::Acquire) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        finished.load(Ordering::Acquire),
+        "the connection did not end after the hub cut it off"
+    );
+    runner.join().expect("the connection thread panicked");
+    hub.stop();
+}
+
 #[test]
 fn a_page_that_closes_its_socket_ends_the_loop_at_once() {
     let Wired {
