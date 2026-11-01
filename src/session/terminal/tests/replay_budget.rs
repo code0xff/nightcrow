@@ -3,12 +3,18 @@
 //! attached to one receives every pane before anything else; a serializer that grew, or
 //! a smaller chunk, would break that promise.
 
-use crate::session::limits::{MAX_PANE_COLS, MAX_PANE_ROWS, MAX_PTYS_PER_REPO};
+use crate::session::limits::{
+    MAX_PANE_COLS, MAX_PANE_ROWS, MAX_PTYS_PER_REPO, MAX_TERMINAL_SCROLLBACK_BYTES,
+};
 use crate::session::terminal::CLIENT_QUEUE_DEPTH;
 use crate::session::terminal::hub_modes::PaneModeTracker;
 use crate::session::terminal::hub_replay::REPLAY_CHUNK_BYTES;
 
 const PANE: u32 = 7;
+
+fn chunks(bytes: usize) -> usize {
+    bytes.div_ceil(REPLAY_CHUNK_BYTES)
+}
 
 /// The largest screen this hub will hold: every cell a different truecolor, so the
 /// serializer cannot skip a style change and the fixture stays the worst case. Measured
@@ -35,13 +41,21 @@ fn the_largest_replay_a_hub_allows_fits_the_client_queue() {
         screen.len()
     );
 
-    // Every frame one pane's replay can need: its announcement, the mode prelude, the
-    // normal buffer frozen under an alternate screen (the ring's cap and its snapshot,
-    // at most two chunks), and the record — this screen plus the bytes recorded since
-    // it was taken, which may run to the ring's cap, one more chunk.
-    let frames_per_pane = 1 + 1 + 2 + screen.len().div_ceil(REPLAY_CHUNK_BYTES) + 1;
-    // The greeting, and the completion marker's reserved slot.
-    let whole_hub = frames_per_pane * MAX_PTYS_PER_REPO + 2;
+    // Every frame one pane's replay can need. Both snapshots are grid serializations of
+    // this size: the one frozen under an alternate-screen program is read from the same
+    // emulator, so measuring one measures the other. The ring it sits over is the largest
+    // record the hub keeps, three caps (see `replay_build_at_full_caps`), and the bytes an
+    // alternate-screen program has recorded since its snapshot are superseded at one cap.
+    let snapshot = chunks(screen.len());
+    let ring = chunks(3 * MAX_TERMINAL_SCROLLBACK_BYTES);
+    let since = chunks(MAX_TERMINAL_SCROLLBACK_BYTES);
+    let normal_under = 1 + ring + snapshot; // the leave sequence, the history, the screen
+    let record = snapshot + since; // a frozen screen, then what was recorded after it
+    let frames_per_pane = 1 + 1 + normal_under + record; // announcement, prelude, parts
+
+    // The greeting, the zoom a connecting client may be told about, and the completion
+    // marker's reserved slot.
+    let whole_hub = frames_per_pane * MAX_PTYS_PER_REPO + 3;
     assert!(
         whole_hub <= CLIENT_QUEUE_DEPTH,
         "a {rows}x{cols} replay needs {whole_hub} frames for {MAX_PTYS_PER_REPO} panes, \
