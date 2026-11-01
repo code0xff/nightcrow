@@ -51,7 +51,7 @@ impl App {
             // visible-row count directly. Width = indent (depth*2) + 2-char
             // dir/file marker + name char count.
             ViewMode::Tree => {
-                let rows = self.git.view.tree.visible_rows();
+                let rows = self.git.view.tree.rows();
                 let len = rows.len();
                 if let Some((cached_len, cached_max)) = self.git.view.tree.row_width_cache.get()
                     && cached_len == len

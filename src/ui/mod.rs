@@ -22,6 +22,7 @@ mod helpers;
 mod hint_bar;
 mod hint_text;
 mod hit_test;
+mod hot_stage;
 mod notice;
 mod repo_dialog;
 #[cfg(test)]
@@ -34,8 +35,9 @@ pub(crate) use file_list::next_hot_deadline_for_app;
 pub use help::CLOSED_HELP;
 pub use help::HelpOverlay;
 pub(crate) use helpers::{
-    char_offset, current_caret_lit, focused_border_style, jump_legend, path_extension,
-    render_search_bar, render_selectable_list, status_color,
+    RowsScope, char_offset, current_caret_lit, filtered_position, focused_border_style,
+    jump_legend, path_extension, render_search_bar, render_selectable_list, rows_to_render,
+    status_color, windowed_selection,
 };
 pub(crate) use hint_bar::{
     HintClick, empty_hint_click_at, hint_click_at, hint_spans, render_hint_bar,

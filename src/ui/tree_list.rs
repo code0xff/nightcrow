@@ -20,6 +20,15 @@ const COLLAPSED_MARKER: &str = "› ";
 const FILE_MARKER: &str = "  ";
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
+    render_with(frame, app, area, accent, super::RowsScope::Window);
+}
+
+#[cfg(test)]
+pub(super) fn render_full(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
+    render_with(frame, app, area, accent, super::RowsScope::Full);
+}
+
+fn render_with(frame: &mut Frame, app: &App, area: Rect, accent: Color, scope: super::RowsScope) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
 
@@ -36,10 +45,16 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         (area, None)
     };
 
-    let rows = app.tree_view().visible_rows();
+    let rows = app.tree_view().rows();
     let scroll_x = app.tree_view().scroll_x;
 
-    let items: Vec<ListItem> = rows
+    let selected = if rows.is_empty() {
+        None
+    } else {
+        Some(app.tree_view().selected.min(rows.len() - 1))
+    };
+    let window = super::rows_to_render(scope, rows.len(), list_area, selected);
+    let items: Vec<ListItem> = rows[window.clone()]
         .iter()
         .map(|row| {
             let indent = "  ".repeat(row.depth);
@@ -78,12 +93,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         format!(" {} Tree ", super::jump_legend(app, '1'))
     };
 
-    let selected = if rows.is_empty() {
-        None
-    } else {
-        Some(app.tree_view().selected.min(rows.len() - 1))
-    };
-
+    let selected = super::windowed_selection(selected, &window);
     super::render_selectable_list(frame, list_area, title, items, selected, border_style);
 
     if let Some(sa) = search_area {
