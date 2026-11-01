@@ -142,6 +142,26 @@ fn a_row_after_an_erased_one_still_says_what_its_cells_look_like() {
     );
 }
 
+/// The pen an erase leaves the reader on is the hoisted default, so a default cell
+/// after a coloured row that was erased costs no escape at all. Keeping the coloured
+/// pen would still paint the same screen, which is why only the bytes show it.
+#[test]
+fn a_default_cell_after_a_coloured_erased_row_costs_no_escape() {
+    let mut emulator = PaneEmulator::new(2, 8, 0);
+    emulator.process(b"\x1b[1;1H\x1b[41mab\x1b[2;1H\x1b[mcd");
+    let snapshot = String::from_utf8(emulator.screen_snapshot()).expect("a snapshot is text");
+    let row2 = snapshot
+        .split("\x1b[2;1H")
+        .nth(1)
+        .expect("the snapshot must position row 2");
+
+    assert!(
+        row2.starts_with("cd"),
+        "the erase before it already reset the reader, so the row must not restate a \
+         pen, got: {row2:?}"
+    );
+}
+
 /// What each row of a snapshot spells out once its escape sequences are removed,
 /// and whether it ends by erasing the rest of the row.
 fn spelled_rows(snapshot: &[u8], rows: u16) -> Vec<(String, bool)> {
