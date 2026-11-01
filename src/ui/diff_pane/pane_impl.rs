@@ -1,8 +1,4 @@
-use crate::git::diff::LineKind;
-use crate::ui::diff_pane::{
-    DIFF_THEME, DiffPane, DiffPaneView, HIGHLIGHT_LINE_CAP, HighlightSegment,
-    highlight_line_segments, nearest_match_index, resolve_syntax_extension,
-};
+use crate::ui::diff_pane::{DiffPane, DiffPaneView, nearest_match_index};
 
 impl DiffPane {
     pub fn scroll_left(&mut self) {
@@ -164,65 +160,5 @@ impl DiffPane {
         if self.lower_cache_generation != Some(self.generation) {
             self.rebuild_lower_cache();
         }
-    }
-
-    /// Ensure `line_highlights` matches the current generation, resolving the
-    /// syntax separately for each hunk: a commit diff can touch files of
-    /// different types, and a single syntax would render everything as the
-    /// first file's language. The generation check is the frame hot path; the
-    /// full syntax/highlight walk happens only after `set_hunks`.
-    ///
-    /// Only the first [`HIGHLIGHT_LINE_CAP`] body lines are highlighted. A
-    /// hunk past the cap gets no entry and a hunk straddling it keeps only its
-    /// in-budget prefix, so the renderers' `(hunk, line)` cache lookup falls
-    /// back to plain text for everything beyond.
-    pub fn ensure_highlight_cache(
-        &mut self,
-        ss: &syntect::parsing::SyntaxSet,
-        ts: &syntect::highlighting::ThemeSet,
-    ) {
-        if self.highlight_cache_generation == Some(self.generation) {
-            return;
-        }
-
-        use syntect::easy::HighlightLines;
-        let theme = &ts.themes[DIFF_THEME];
-        // Reset the highlighter state pair whenever the hunk's syntax changes
-        // — a JS hunk through a Rust HighlightLines would mis-paint stateful
-        // multi-line constructs.
-        let mut hl_pair: Option<(HighlightLines<'_>, HighlightLines<'_>)> = None;
-        let mut current_syntax_name = String::new();
-
-        let mut out: Vec<Vec<Vec<HighlightSegment>>> = Vec::with_capacity(self.hunks.len());
-        let mut remaining = HIGHLIGHT_LINE_CAP;
-        for (hunk, extension) in self.hunks.iter().zip(self.syntax_shape.iter()) {
-            if remaining == 0 {
-                break;
-            }
-            let syntax = resolve_syntax_extension(ss, extension.as_deref());
-            if hl_pair.is_none() || current_syntax_name != syntax.name {
-                hl_pair = Some((
-                    HighlightLines::new(syntax, theme),
-                    HighlightLines::new(syntax, theme),
-                ));
-                current_syntax_name = syntax.name.clone();
-            }
-            // Safe: just assigned above when None.
-            let (hl_new, hl_old) = hl_pair.as_mut().unwrap();
-
-            let take = hunk.lines.len().min(remaining);
-            let mut per_hunk: Vec<Vec<HighlightSegment>> = Vec::with_capacity(take);
-            for line in hunk.lines.iter().take(take) {
-                let hl = match line.kind {
-                    LineKind::Removed => &mut *hl_old,
-                    _ => &mut *hl_new,
-                };
-                per_hunk.push(highlight_line_segments(hl, ss, &line.content));
-            }
-            remaining -= take;
-            out.push(per_hunk);
-        }
-        self.line_highlights = out;
-        self.highlight_cache_generation = Some(self.generation);
     }
 }

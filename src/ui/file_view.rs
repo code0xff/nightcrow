@@ -1,6 +1,7 @@
 use crate::git::diff::StatusKind;
 use crate::ui::diff_pane::{
-    DIFF_THEME, HIGHLIGHT_LINE_CAP, HighlightSegment, highlight_line_segments,
+    DIFF_THEME, HIGHLIGHT_LINE_CAP, HighlightCheckpoint, HighlightSegment, LineHighlighter,
+    highlight_line_segments,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +42,12 @@ pub struct FileViewState {
     /// Lowercased copy of each `content` line. Built on demand by
     /// `ensure_lower_cache` so per-keystroke file search avoids re-lowercasing.
     pub(crate) lines_lower: Vec<String>,
+    /// Leading `line_highlights` entries that still match `content` after an
+    /// append, so the next cache build extends instead of replaying the file.
+    /// Zero for a fresh load or any non-append change.
+    pub(crate) reusable_highlights: usize,
+    /// State after the last cached line, used to resume appends.
+    pub(crate) highlight_checkpoint: Option<HighlightCheckpoint>,
 }
 
 impl FileViewState {
@@ -53,11 +60,16 @@ impl FileViewState {
     /// can't leave them disagreeing (which would make `max_scroll` lie about
     /// the legal scroll range).
     pub fn set_content(&mut self, content: String) {
+        let reusable = self.appendable_prefix_len(&content);
         self.line_starts = line_starts(&content);
         self.total_lines = self.line_starts.len();
         self.content = content;
-        self.line_highlights.clear();
-        self.cached_syntax_name = None;
+        self.line_highlights.truncate(reusable);
+        self.reusable_highlights = reusable;
+        if reusable == 0 {
+            self.cached_syntax_name = None;
+            self.highlight_checkpoint = None;
+        }
         self.cached_content_len = 0;
         self.lines_lower.clear();
         self.scroll = self.scroll.min(self.max_scroll());
@@ -102,7 +114,8 @@ impl FileViewState {
     /// Ensure the leading `line_highlights` match the current `content` and
     /// supplied syntax, stopping at [`HIGHLIGHT_LINE_CAP`]. Rebuilds when the
     /// cached prefix length diverges or the syntax name changed since the
-    /// last build.
+    /// last build. Appended lines resume from the saved state after the cached
+    /// prefix, so only the new tail is highlighted.
     pub fn ensure_highlight_cache(
         &mut self,
         ss: &syntect::parsing::SyntaxSet,
@@ -118,17 +131,70 @@ impl FileViewState {
             return;
         }
 
-        use syntect::easy::HighlightLines;
         let theme = &ts.themes[DIFF_THEME];
-        let mut hl = HighlightLines::new(syntax, theme);
+        let reusable = if self.cached_syntax_name.as_deref() == Some(syntax.name.as_str())
+            && self.reusable_highlights > 0
+            && self.reusable_highlights <= self.line_highlights.len()
+        {
+            self.reusable_highlights
+        } else {
+            0
+        };
+        let mut out: Vec<Vec<HighlightSegment>> = Vec::new();
+        let mut hl = match self.highlight_checkpoint.take() {
+            Some(checkpoint) if reusable > 0 => {
+                let mut kept = std::mem::take(&mut self.line_highlights);
+                kept.truncate(reusable);
+                out = kept;
+                LineHighlighter::resume(theme, checkpoint)
+            }
+            _ => {
+                self.line_highlights.clear();
+                LineHighlighter::new(syntax, theme)
+            }
+        };
 
-        let mut out: Vec<Vec<HighlightSegment>> = Vec::with_capacity(limit);
-        for raw in self.content.lines().take(limit) {
+        for raw in self.content.lines().take(limit).skip(out.len()) {
             out.push(highlight_line_segments(&mut hl, ss, raw));
         }
+        self.highlight_checkpoint = if out.is_empty() {
+            None
+        } else {
+            Some(hl.checkpoint())
+        };
         self.line_highlights = out;
         self.cached_syntax_name = Some(syntax.name.clone());
         self.cached_content_len = content_len;
+        self.reusable_highlights = 0;
+    }
+
+    /// Number of leading cached lines that survive `next` unchanged.
+    ///
+    /// Reuse needs the cached lines to end at a line boundary in the old
+    /// content and to be byte-identical in `next`; anything else falls back to
+    /// a full rebuild.
+    fn appendable_prefix_len(&self, next: &str) -> usize {
+        let reusable = self.line_highlights.len();
+        if reusable == 0 {
+            return 0;
+        }
+        match self.line_starts.get(reusable) {
+            Some(&boundary) => {
+                if next.len() < boundary
+                    || self.content.as_bytes()[..boundary] != next.as_bytes()[..boundary]
+                {
+                    return 0;
+                }
+                reusable
+            }
+            None => {
+                if self.content.ends_with('\n') && next.starts_with(self.content.as_str()) {
+                    reusable
+                } else {
+                    0
+                }
+            }
+        }
     }
 }
 

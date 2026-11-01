@@ -1,4 +1,5 @@
 mod highlight_cap;
+mod highlight_reuse;
 
 use super::*;
 use crate::git::diff::{DiffLine, LineKind};

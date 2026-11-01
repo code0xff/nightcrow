@@ -14,6 +14,19 @@ impl DiffPane {
     /// are deliberately left untouched; callers decide which of those should
     /// reset for a particular load mode.
     pub fn set_hunks(&mut self, hunks: Vec<DiffHunk>) {
+        // Keep the generation that just left the screen so `ensure_highlight_cache`
+        // can reuse a shared hunk prefix. An emptied diff has nothing to compare
+        // against later, so it releases that memory instead of holding it.
+        self.previous_hunks = std::mem::take(&mut self.hunks);
+        self.previous_highlights = std::mem::take(&mut self.line_highlights);
+        self.previous_checkpoints = std::mem::take(&mut self.highlight_checkpoints);
+        self.previous_hunks.truncate(self.previous_highlights.len());
+        if hunks.is_empty() {
+            self.previous_hunks.clear();
+            self.previous_highlights.clear();
+            self.previous_checkpoints.clear();
+        }
+
         self.hunks = hunks;
         self.generation = self.generation.wrapping_add(1);
 
@@ -71,7 +84,6 @@ impl DiffPane {
             flush_split_blocks(&mut self.split_rows, hi, &mut removed, &mut added);
         }
 
-        self.line_highlights.clear();
         self.highlight_cache_generation = None;
         self.search.matches.clear();
     }
