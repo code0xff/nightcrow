@@ -1,5 +1,6 @@
 mod layout_tests;
 mod render_tests;
+mod screen_cells_tests;
 mod tab_tests;
 
 use crate::app::App;
