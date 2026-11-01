@@ -20,6 +20,11 @@ import type { ScreenScale } from "../ui/screenScale";
 import { createTitleThrottle } from "../../lib/terminal/titleThrottle";
 import type { TitleThrottle } from "../../lib/terminal/titleThrottle";
 import { enableWebglRenderer } from "../../lib/terminal/webglRenderer";
+import {
+  queueTerminalBarrier,
+  resetTerminalWrites,
+  writeTerminalData,
+} from "../../lib/terminal/terminalWrites";
 
 interface UseTerminalViewsArgs {
   panes: number[];
@@ -202,7 +207,7 @@ export function useTerminalViews({
       if (queued) {
         for (const item of queued) {
           if (item instanceof Uint8Array) {
-            term.write(item);
+            writeTerminalData(term, item);
           } else {
             queueReplayEnd(term, view.replayGate, () => {
               if (
@@ -219,7 +224,7 @@ export function useTerminalViews({
         // its end. Queued behind the replay rather than run after the loop:
         // `write` parses on a later task, so scrolling here directly would
         // land on a buffer that had not finished growing.
-        term.write("", () => term.scrollToBottom());
+        queueTerminalBarrier(term, () => term.scrollToBottom());
       }
     }
 
@@ -227,6 +232,7 @@ export function useTerminalViews({
       if (!panes.includes(pane)) {
         titleThrottlesRef.current.get(pane)?.cancel();
         titleThrottlesRef.current.delete(pane);
+        resetTerminalWrites(view.term);
         view.term.dispose();
         viewsRef.current.delete(pane);
       }
