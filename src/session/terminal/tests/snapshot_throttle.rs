@@ -79,15 +79,17 @@ impl Desk {
         }
     }
 
-    /// One chunk of the pane's output, as the worker's event loop takes it.
-    pub(super) fn output(&mut self, chunk: &[u8]) {
+    /// One chunk of the pane's output, as the worker's event loop takes it. Reports
+    /// whether the chunk left the pane for the end-of-tick pass.
+    pub(super) fn output(&mut self, chunk: &[u8]) -> bool {
         self.live.process(chunk);
-        if self
+        let restless = self
             .hub
-            .record_pane_output(PANE, chunk.to_vec(), &mut self.tracker)
-        {
+            .record_pane_output(PANE, chunk.to_vec(), &mut self.tracker);
+        if restless {
             self.restless = true;
         }
+        restless
     }
 
     /// The end of one tick: the snapshot pass, then the clock moves on.
@@ -141,21 +143,27 @@ fn drawn(emulator: &PaneEmulator) -> Vec<String> {
     out
 }
 
-/// The screen a client attaching right now is replayed, and how many bytes that
-/// took.
-fn replay(desk: &Desk) -> (PaneEmulator, usize) {
+/// The bytes a client attaching right now is replayed for the pane.
+pub(super) fn replay_stream(desk: &Desk) -> Vec<u8> {
     let client = attach(&desk.hub);
-    let mut emulator = PaneEmulator::new(desk.rows, desk.cols, 0);
-    let mut bytes = 0;
+    let mut out = Vec::new();
     while let Some(frame) = client.next_frame(QUEUED) {
         if let TerminalFrame::Output { pane, data } = frame
             && pane == PANE
         {
-            bytes += data.len();
-            emulator.process(&data);
+            out.extend(data);
         }
     }
-    (emulator, bytes)
+    out
+}
+
+/// The screen a client attaching right now is replayed, and how many bytes that
+/// took.
+fn replay(desk: &Desk) -> (PaneEmulator, usize) {
+    let stream = replay_stream(desk);
+    let mut emulator = PaneEmulator::new(desk.rows, desk.cols, 0);
+    emulator.process(&stream);
+    (emulator, stream.len())
 }
 
 /// Require that the record the hub holds right now rebuilds the live screen cell

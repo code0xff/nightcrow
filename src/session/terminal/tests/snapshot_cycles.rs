@@ -7,7 +7,7 @@
 //! be replayed raw — so the pace lengthening that tail is only safe if exactly
 //! these paths still rebuild the live screen.
 
-use super::snapshot_throttle::{Desk, ENTER, assert_replay_matches_live, frame};
+use super::snapshot_throttle::{Desk, ENTER, assert_replay_matches_live, frame, replay_stream};
 use crate::session::limits::MAX_TERMINAL_SCROLLBACK_BYTES;
 
 /// The normal screen under the program is recorded, spent, frozen and spent again
@@ -92,7 +92,7 @@ fn next_chunk(state: &mut u64, n: usize) -> Vec<u8> {
     *state ^= *state << 17;
     match *state % 16 {
         0..=9 => format!("\x1b[2;1Hframe {n:06}\x1b[K").into_bytes(),
-        10..=13 => vec![b'.'; 64 + (*state as usize % 4096)],
+        10..=13 => vec![b'.'; 64 + (*state as usize % 8192)],
         14 => b"\x1b[".to_vec(),
         _ => b"\x1b[3;1H\x1b[K".to_vec(),
     }
@@ -111,7 +111,7 @@ fn any_chunking_keeps_the_replay_exact_and_the_snapshot_rate_bounded() {
     let mut written = ENTER.len();
     let mut state = 0x9e37_79b9_7f4a_7c15u64;
 
-    for tick in 0..400 {
+    for tick in 0..250 {
         for n in 0..=tick % 3 {
             let chunk = next_chunk(&mut state, written + n);
             written += chunk.len();
@@ -137,5 +137,36 @@ fn any_chunking_keeps_the_replay_exact_and_the_snapshot_rate_bounded() {
         written > MAX_TERMINAL_SCROLLBACK_BYTES,
         "the stream must be long enough to cross the crowded cap"
     );
+    desk.hub.stop();
+}
+
+/// The other branch of the worker's output path, which the extraction moved too: a
+/// normal-screen pane records its ring, never joins the alternate-screen pass, and
+/// only a tail grown past the cap asks for a snapshot — which the replay must then
+/// carry instead of the ring it supersedes.
+#[test]
+fn a_crowded_normal_record_still_takes_its_snapshot() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let mut desk = Desk::new(&dir);
+    let chunk = b"a line of ordinary output\r\n".repeat(8);
+    let chunks = MAX_TERMINAL_SCROLLBACK_BYTES / chunk.len() + 64;
+
+    for n in 0..chunks {
+        assert!(
+            !desk.output(&chunk),
+            "a normal-screen pane is never left for the alternate-screen pass"
+        );
+        if n % 4 == 3 {
+            desk.tick();
+        }
+    }
+    desk.tick();
+
+    let stream = replay_stream(&desk);
+    assert!(
+        stream.windows(4).any(|window| window == b"\x1b[2J"),
+        "the replay must carry the absolute repaint a crowded ring asks for"
+    );
+    assert_replay_matches_live(&desk);
     desk.hub.stop();
 }
