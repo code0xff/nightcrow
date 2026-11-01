@@ -25,6 +25,7 @@ mod hub_events;
 mod hub_helpers;
 mod hub_layout;
 mod hub_modes;
+mod hub_output;
 mod hub_panes;
 mod hub_plugins;
 mod hub_plugins_slots;
