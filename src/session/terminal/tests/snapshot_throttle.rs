@@ -155,3 +155,44 @@ fn an_entry_chunk_screen_is_not_taken_again_at_the_end_of_its_tick() {
     );
     hub.stop();
 }
+
+/// A stream that never ends at a clean boundary cannot be spliced until it is
+/// twice the ring cap, where the desperate path takes the screen over the seam.
+/// This is the bound the replay docs describe for torn chunks.
+#[test]
+fn a_torn_stream_is_snapshotted_over_the_seam_at_the_desperate_cap() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = super::spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
+    hub.register_pane(PANE, ROWS, COLS, None, None);
+    let now = Instant::now();
+    let mut tracker = PaneModeTracker::default();
+
+    assert!(
+        !hub.record_pane_output(PANE, ENTER.to_vec(), &mut tracker, now),
+        "the entry chunk takes its own screen"
+    );
+
+    // Each chunk ends in an unfinished CSI, so the stream is torn at every
+    // tick and the crowded path can never splice a screen.
+    const CHUNK: usize = 4096;
+    let mut chunk = vec![b'x'; CHUNK];
+    chunk[CHUNK - 4..].copy_from_slice(b"\x1b[12");
+
+    let mut whole_chunks = 0usize;
+    while hub.record_pane_output(PANE, chunk.clone(), &mut tracker, now) {
+        whole_chunks += 1;
+        assert!(whole_chunks < 1000, "the desperate snapshot never fired");
+        assert!(!tracker.at_boundary(PANE), "the stream must stay torn");
+    }
+
+    let written = (whole_chunks + 1) * CHUNK;
+    assert!(
+        written > 2 * MAX_TERMINAL_SCROLLBACK_BYTES,
+        "the screen may only be taken over the seam past twice the cap"
+    );
+    assert!(
+        whole_chunks * CHUNK <= 2 * MAX_TERMINAL_SCROLLBACK_BYTES,
+        "and not before it"
+    );
+    hub.stop();
+}
