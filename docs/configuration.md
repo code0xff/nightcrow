@@ -31,7 +31,7 @@ session_ttl_hours = 24
 # allowed_hosts = ["machine.tailnet.ts.net"]
 ```
 
-`bind` must be an IP address and `port` must be non-zero. `session_ttl_hours` accepts `0..=87600` hours; `0` means sessions do not expire on the server, while browser cookies still have a 400-day maximum. If neither credential is set, startup generates a random password, saves it to this file, and prints it once. `hashed_password` is an Argon2 PHC string and takes precedence over `password`. Login attempts are rate-limited, logout revokes the server-side token, and persisted tokens live in `~/.nightcrow/sessions`.
+`bind` must be an IP address and `port` must be non-zero. `session_ttl_hours` accepts `0..=87600` hours; `0` means sessions do not expire on the server, while browser cookies still have a 400-day maximum. If neither credential is set, startup generates a random password, saves it to this file, and prints it once. `hashed_password` is an Argon2 PHC string and takes precedence over `password`. Login attempts are rate-limited, logout revokes the server-side token, and persisted tokens live in `~/.nightcrow/sessions`. The store keeps at most 64 tokens; a login past that cap forgets the oldest.
 
 A loopback-bound viewer refuses requests whose `Host` is not a loopback name, so a page another site rebinds to `127.0.0.1` cannot reach it. A local HTTPS proxy such as `tailscale serve` forwards the name the browser used, so list that name in `allowed_hosts` (without a port; case is ignored). Off loopback the check does not apply and the list is not needed. The list is read when the daemon starts.
 
