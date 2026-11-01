@@ -86,8 +86,10 @@ impl TerminalState {
             return false;
         }
         let (rows, cols) = crate::runtime::emulator::effective_size(rows, cols);
-        self.emulators
-            .insert(id, PaneEmulator::new(rows, cols, SCROLLBACK_LINES));
+        self.emulators.insert(
+            id,
+            PaneEmulator::without_boundary_tracking(rows, cols, SCROLLBACK_LINES),
+        );
         self.last_content_size.insert(id, (rows, cols));
         self.confirmed_content_size.insert(id, (rows, cols));
         // The session's name first: a configured startup terminal is called the
