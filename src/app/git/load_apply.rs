@@ -145,6 +145,8 @@ impl App {
                     };
                 file_view.key = Some(intent.key);
                 file_view.anchor_line = intent.anchor;
+                file_view.error = None;
+                file_view.scroll_x = 0;
                 file_view.set_content(content);
                 let initial = intent
                     .anchor
