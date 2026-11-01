@@ -32,6 +32,27 @@ const PTY_REAP_TIMEOUT: Duration = Duration::from_millis(50);
 /// Max events drained from any one pane in a single `drain_events` call.
 const PER_PANE_DRAIN_BUDGET: usize = 64;
 
+/// The window a woken owner's per-pane budget applies to. An owner that polled on
+/// a fixed tick took at most one budget per tick. An owner woken by the reader
+/// runs a pass per queued event, so a per-pass budget never binds and a burst
+/// reaches its clients as fast as the PTY produces it, flooding their bounded
+/// queues, which cut a client off rather than skip bytes. Counting the budget
+/// across every pass in this window keeps the polled ceiling.
+const DRAIN_WINDOW: Duration = Duration::from_millis(8);
+
+/// A woken owner's budget use for one pane within the current [`DRAIN_WINDOW`].
+#[derive(Clone, Copy, Debug)]
+pub(super) struct DrainWindow {
+    pub(super) start: Instant,
+    pub(super) used: usize,
+}
+
+impl DrainWindow {
+    pub(super) fn end(&self) -> Instant {
+        self.start + DRAIN_WINDOW
+    }
+}
+
 /// How long a pane whose child has exited keeps draining before the exit is
 /// reported. The caller destroys the pane the moment it sees `Exited`, so
 /// reporting at once would drop output the ConPTY host is still copying.
@@ -74,6 +95,9 @@ pub(super) struct PtyPane {
     #[cfg(test)]
     pub(super) output_backpressured: Arc<AtomicBool>,
     pub(super) exit: ExitPhase,
+    /// A woken owner's budget use in the current window; `None` for a polling
+    /// owner, whose own tick paces it.
+    pub(super) window: Option<DrainWindow>,
 }
 
 impl Drop for PtyPane {
@@ -119,11 +143,6 @@ pub struct PtyBackend {
     /// threads below can tell it an event is queued. `None` leaves the owner
     /// polling, which is what the attached TUI's backend does.
     waker: Option<WakeHandle>,
-    /// Whether the last drain spent a pane's budget with events still possibly
-    /// queued. The reader's wake for those was consumed by the pass that spent
-    /// the budget, so the owner has to be told to come back at once rather than
-    /// wait for another signal (see [`PtyBackend::next_deadline`]).
-    drain_backlog: bool,
 }
 
 impl PtyBackend {
@@ -136,7 +155,6 @@ impl PtyBackend {
             created: Vec::new(),
             shell,
             waker: None,
-            drain_backlog: false,
         }
     }
 
