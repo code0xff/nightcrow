@@ -58,6 +58,7 @@ describe("useStatus open diff refresh", () => {
     vi.mocked(api.diff).mockResolvedValue(diff);
     const { send } = setup();
     await send(status([row("a.ts", 100), row("b.ts", 100)]));
+    vi.mocked(api.diff).mockClear();
     await send(status([row("a.ts", 100), row("b.ts", 200)]));
     expect(api.diff).not.toHaveBeenCalled();
   });
@@ -66,6 +67,7 @@ describe("useStatus open diff refresh", () => {
     vi.mocked(api.diff).mockResolvedValue(diff);
     const { send, setPane } = setup();
     await send(status([row("a.ts", 100)]));
+    vi.mocked(api.diff).mockClear();
     await send(status([row("a.ts", 200)]));
     expect(api.diff).toHaveBeenCalledTimes(1);
     expect(api.diff).toHaveBeenCalledWith("repo-1", "a.ts");
@@ -89,20 +91,49 @@ describe("useStatus open diff refresh", () => {
     expect(setPane).toHaveBeenCalledWith({ kind: "empty" });
   });
 
-  it("does not ask twice while one refresh is still in flight", async () => {
-    const pending: { resolve: ((value: Diff) => void) | null } = {
-      resolve: null,
-    };
-    vi.mocked(api.diff).mockReturnValue(
-      new Promise<Diff>((done) => {
-        pending.resolve = done;
-      }),
-    );
-    const { send } = setup();
+  it("adopts a newly opened diff whose row has not moved since the last event", async () => {
+    vi.mocked(api.diff).mockResolvedValue(diff);
+    const { hook, send, args } = setup("a.ts");
+    await send(status([row("a.ts", 100), row("b.ts", 100)]));
+    vi.mocked(api.diff).mockClear();
+    args.pane = { kind: "diff", value: { ...diff, path: "b.ts" } };
+    hook.rerender();
+    await send(status([row("a.ts", 300), row("b.ts", 100)]));
+    expect(api.diff).not.toHaveBeenCalled();
+  });
+
+  it("refetches a newly opened diff whose row moved after it was opened", async () => {
+    vi.mocked(api.diff).mockResolvedValue(diff);
+    const { hook, send, args } = setup("a.ts");
+    await send(status([row("a.ts", 100), row("b.ts", 100)]));
+    vi.mocked(api.diff).mockClear();
+    args.pane = { kind: "diff", value: { ...diff, path: "b.ts" } };
+    hook.rerender();
+    await send(status([row("a.ts", 100), row("b.ts", 200)]));
+    expect(api.diff).toHaveBeenCalledTimes(1);
+    expect(api.diff).toHaveBeenCalledWith("repo-1", "b.ts");
+  });
+
+  it("lets the latest refresh land when an event repeats while one is in flight", async () => {
+    const resolvers: ((value: Diff) => void)[] = [];
+    const { send, setPane } = setup();
+    vi.mocked(api.diff).mockResolvedValue(diff);
     await send(status([row("a.ts", 100)]));
+    vi.mocked(api.diff).mockClear();
+    setPane.mockClear();
+    vi.mocked(api.diff).mockImplementation(
+      () =>
+        new Promise<Diff>((done) => {
+          resolvers.push(done);
+        }),
+    );
     await send(status([row("a.ts", 200)]));
     await send(status([row("b.ts", 200), row("a.ts", 200)]));
-    expect(api.diff).toHaveBeenCalledTimes(1);
-    await act(async () => pending.resolve?.(diff));
+    expect(api.diff).toHaveBeenCalledTimes(2);
+    await act(async () => resolvers.forEach((resolve) => resolve(diff)));
+    expect(setPane).toHaveBeenCalledTimes(1);
+    expect(setPane).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "diff", value: diff }),
+    );
   });
 });

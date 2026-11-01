@@ -56,9 +56,9 @@ export function useStatus({
   // from the same row, adopted — from. A status event for some other file must
   // leave the diff alone.
   const diffRowRef = useRef<{ path: string; key: string } | null>(null);
-  // A refresh already asked for by this row, so two events naming the same
-  // change do not fetch it twice.
-  const pendingRef = useRef<{ path: string; key: string } | null>(null);
+  // The previous status event's rows. A diff opened since then was read from
+  // the working tree that event described, so its row there is the baseline.
+  const prevKeysRef = useRef<Map<string, string> | null>(null);
 
   // Clear stale data on repo/auth changes, but retain it across resume
   // resubscription. Before paint, not after: the render that switches project
@@ -66,6 +66,7 @@ export function useStatus({
   // them show for a frame.
   useLayoutEffect(() => {
     setStatus(null);
+    prevKeysRef.current = null;
   }, [repo, authed]);
 
   useEffect(() => {
@@ -78,6 +79,8 @@ export function useStatus({
   // Only an open status diff is invalidated by working-tree updates.
   useEffect(() => {
     if (!repo || !status) return;
+    const previous = prevKeysRef.current;
+    prevKeysRef.current = new Map(status.files.map((f) => [f.path, rowKey(f)]));
     const current = paneRef.current;
     if (tabRef.current !== "status" || current.kind !== "diff") {
       diffRowRef.current = null;
@@ -93,17 +96,13 @@ export function useStatus({
     const key = rowKey(row);
     const seen = diffRowRef.current;
     if (seen?.path === path && seen.key === key) return;
-    // Opened just now (or replaced by another path): whatever put it there
-    // read the same working tree, so this row is its baseline. Only a later
-    // move of that row makes the diff stale.
-    if (seen?.path !== path) {
+    // Opened since the last event: the diff was read against the working tree
+    // that event described, so it is current only if this row has not moved
+    // since then.
+    if (seen?.path !== path && previous?.get(path) === key) {
       diffRowRef.current = { path, key };
       return;
     }
-    if (pendingRef.current?.path === path && pendingRef.current.key === key) {
-      return;
-    }
-    pendingRef.current = { path, key };
     const request = paneRequestRef.current;
     let active = true;
     // The counter alone is insufficient because a refresh can start before a new pane is rendered.
@@ -139,14 +138,6 @@ export function useStatus({
       })
       .catch((err) => {
         if (stillOurs()) handle(err);
-      })
-      .finally(() => {
-        // The next event naming the same change gets a fresh attempt if this
-        // one failed; one that arrives while it is still running does not ask
-        // twice.
-        if (pendingRef.current?.path === path && pendingRef.current.key === key) {
-          pendingRef.current = null;
-        }
       });
     return () => {
       active = false;
