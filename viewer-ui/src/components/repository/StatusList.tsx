@@ -1,6 +1,6 @@
 import { SkeletonRows } from "../feedback/Skeleton";
 import { PathLabel } from "../content/PathLabel";
-import { HOT_CLASS } from "../../hooks/ui/useHotClock";
+import { HOT_CLASS, useHotClock } from "../../hooks/ui/useHotClock";
 import { classifyHot } from "../../lib/repository/hot";
 import { unavailableMessage } from "../../lib/repository/unavailable";
 import { statusColor } from "../../lib/shared/utils";
@@ -10,18 +10,22 @@ import type { RepoStatus } from "../../hooks/git/useStatus";
 export interface StatusListProps {
   status: RepoStatus | null;
   files: ChangedFile[];
-  now: number;
   hotWindowMs: number;
+  clockSkewMs: number;
   openDiff: (path: string) => void;
 }
 
 export function StatusList({
   status,
   files,
-  now,
   hotWindowMs,
+  clockSkewMs,
   openDiff,
 }: StatusListProps) {
+  // The clock runs here rather than at the page top: only these rows change as
+  // a highlight fades, and a tick must not re-render the pane or the terminal
+  // panel beside them.
+  const now = useHotClock(files, hotWindowMs, clockSkewMs);
   if (status === null) {
     return <SkeletonRows as="li" rows={8} />;
   }

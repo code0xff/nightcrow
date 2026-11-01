@@ -28,8 +28,11 @@ export interface SidebarProps {
   setFilterOpen: React.Dispatch<React.SetStateAction<boolean>>;
   status: RepoStatus | null;
   files: ChangedFile[];
-  now: number;
   hotWindowMs: number;
+  /** The server's clock minus this device's, as `/api/repos` reported it. The
+   *  hot clock applies it where the rows are drawn (`StatusList`), so a tick
+   *  re-renders the list rather than the whole page. */
+  clockSkewMs: number;
   openDiff: (path: string) => void;
   openFile: (path: string) => void;
   openCommit: (oid: string) => void;
@@ -90,8 +93,8 @@ export function Sidebar(props: SidebarProps) {
     setFilterOpen,
     status,
     files,
-    now,
     hotWindowMs,
+    clockSkewMs,
     openDiff,
     openFile,
     openCommit,
@@ -227,8 +230,8 @@ export function Sidebar(props: SidebarProps) {
           <StatusList
             status={status}
             files={files}
-            now={now}
             hotWindowMs={hotWindowMs}
+            clockSkewMs={clockSkewMs}
             openDiff={openDiff}
           />
         )}
