@@ -97,6 +97,9 @@ pub(in crate::web::viewer::server) fn serve_terminal(
     // into a poll that services both directions.
     let _ = stream.set_read_timeout(Some(TERM_POLL_TIMEOUT));
     let _ = stream.set_write_timeout(Some(SSE_HEARTBEAT));
+    // Terminal frames are small and latency matters more than packing them:
+    // Nagle would hold a keystroke's echo until an unrelated write completed.
+    let _ = stream.set_nodelay(true);
     // Taken before the stream is moved into the websocket, which owns it from
     // there on.
     let evict_handle = stream.try_clone();
@@ -140,6 +143,7 @@ pub(in crate::web::viewer::server) fn serve_terminal(
     // even if no new output ever arrives.
     let mut unflushed = false;
     loop {
+        let mut wrote = false;
         // Drain everything queued for us before blocking on the socket, so
         // output is not held back waiting for the client to say something.
         while let Some(frame) = session.next_frame(Duration::from_millis(1)) {
@@ -149,8 +153,10 @@ pub(in crate::web::viewer::server) fn serve_terminal(
                 }
                 TerminalFrame::Control(json) => Message::Text(json.into()),
             };
-            match ws.send(message) {
-                Ok(()) => unflushed = false,
+            // `write` queues without flushing, so a burst leaves as one flush
+            // below instead of a syscall pair per frame.
+            match ws.write(message) {
+                Ok(()) => wrote = true,
                 // Stop pulling from the hub while the socket will not take it,
                 // so what is still queued backs up where the cap is: the hub's
                 // own queue, whose overflow disconnects a client that has
@@ -162,10 +168,10 @@ pub(in crate::web::viewer::server) fn serve_terminal(
                 Err(err) => return note_end(&err, "write"),
             }
         }
-        if unflushed {
+        if wrote || unflushed {
             match ws.flush() {
                 Ok(()) => unflushed = false,
-                Err(err) if stalled_not_gone(&err) => {}
+                Err(err) if stalled_not_gone(&err) => unflushed = true,
                 Err(err) => return note_end(&err, "flush"),
             }
         }

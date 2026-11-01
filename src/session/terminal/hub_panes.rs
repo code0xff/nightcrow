@@ -151,7 +151,13 @@ impl TerminalHub {
                 p.title = Some(title);
             }
         }
-        broadcast_locked(&mut state.clients, TerminalFrame::Output { pane, data });
+        broadcast_locked(
+            &mut state.clients,
+            TerminalFrame::Output {
+                pane,
+                data: data.into(),
+            },
+        );
         owed
     }
 

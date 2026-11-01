@@ -4,6 +4,7 @@
 mod attention;
 mod backpressure;
 mod behavior;
+mod broadcast;
 mod identity;
 mod modes;
 mod normal_records;

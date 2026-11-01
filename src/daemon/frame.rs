@@ -5,7 +5,7 @@
 
 use super::protocol::ServerMessage;
 use anyhow::{Context, Result, bail};
-use std::io::{Read, Write};
+use std::io::{IoSlice, Read, Write};
 
 /// Largest payload one frame may carry — the ceiling on what a single message
 /// can make the process allocate, since the reader allocates whatever length
@@ -100,14 +100,38 @@ pub fn write_frame<W: Write>(writer: &mut W, frame: &Frame) -> Result<()> {
             frame.payload.len()
         );
     }
-    // Built as one buffer and written once: a header written separately can
-    // reach the peer as its own packet, leaving a reader blocked on a body
-    // that never comes.
-    let mut out = Vec::with_capacity(5 + frame.payload.len());
-    out.push(frame.kind as u8);
-    out.extend_from_slice(&(frame.payload.len() as u32).to_be_bytes());
-    out.extend_from_slice(&frame.payload);
-    writer.write_all(&out).context("writing a daemon frame")?;
+    // Header and payload are offered as separate slices to one vectored call,
+    // so the frame still reaches the peer as one contiguous message without
+    // first being copied into a buffer of its own.
+    let mut header = [0u8; 5];
+    header[0] = frame.kind as u8;
+    header[1..].copy_from_slice(&(frame.payload.len() as u32).to_be_bytes());
+    write_all_vectored(
+        writer,
+        &mut [IoSlice::new(&header), IoSlice::new(&frame.payload)],
+    )
+    .context("writing a daemon frame")?;
+    Ok(())
+}
+
+/// `write_all` for a pair of slices: resumes where a `write_vectored` stopped,
+/// since a writer may accept only part of what it was offered — and one that
+/// implements only `write` accepts only the first slice.
+fn write_all_vectored<W: Write>(
+    writer: &mut W,
+    mut bufs: &mut [IoSlice<'_>],
+) -> std::io::Result<()> {
+    while !bufs.is_empty() {
+        match writer.write_vectored(bufs) {
+            // A non-empty slice that accepts nothing can never make progress.
+            Ok(0) => {
+                return Err(std::io::Error::from(std::io::ErrorKind::WriteZero));
+            }
+            Ok(written) => IoSlice::advance_slices(&mut bufs, written),
+            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(err) => return Err(err),
+        }
+    }
     Ok(())
 }
 
