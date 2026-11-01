@@ -62,7 +62,10 @@ pub(super) const REPLAY_CHUNK_BYTES: usize = 1024 * 1024;
 // A chunk larger than the frame limit could not be written at all: the daemon refuses
 // such a payload and the replay would end the attach connection rather than arrive.
 // Checked here rather than in the tests so every build, not just the suite, holds the
-// two constants to each other.
+// two constants to each other. Naming the daemon's ceiling from the terminal module is
+// deliberate: this chunk exists only to satisfy it, so the reference runs towards the
+// constraint rather than making the terminal module care about the socket — and a copy
+// of the number here would be free to drift from the limit it has to fit.
 const _: () = assert!(
     REPLAY_CHUNK_BYTES <= crate::daemon::frame::MAX_FRAME_BYTES,
     "a replay chunk must fit the daemon's frame limit"
