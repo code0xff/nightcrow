@@ -143,9 +143,8 @@ impl DiffPane {
         }
     }
 
-    /// Rebuild the lowercased line cache for the current generation. Normal
-    /// callers should use `set_hunks`; this remains a recovery hook for tests
-    /// and callers that already hold a populated pane.
+    /// Rebuild the lowercased line cache for the current generation. Search
+    /// reaches it through `ensure_lower_cache`, once per generation.
     pub fn rebuild_lower_cache(&mut self) {
         self.hunks_lines_lower.clear();
         self.hunks_lines_lower.reserve(self.hunks.len());

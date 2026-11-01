@@ -85,11 +85,9 @@ impl FileViewState {
             .get(idx + 1)
             .copied()
             .unwrap_or(self.content.len());
-        Some(
-            self.content[start..end]
-                .trim_end_matches('\n')
-                .trim_end_matches('\r'),
-        )
+        let line = &self.content[start..end];
+        let line = line.strip_suffix('\n').unwrap_or(line);
+        Some(line.strip_suffix('\r').unwrap_or(line))
     }
 
     /// Ensure `lines_lower` is built for the current `content`, so per-
