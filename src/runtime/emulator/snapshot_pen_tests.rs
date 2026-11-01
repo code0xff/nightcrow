@@ -21,6 +21,22 @@ fn tested_against_a_fresh_default(cell: &Cell) -> bool {
     cell.c == ' ' && cell.zerowidth().is_none() && Pen::of(cell) == Pen::of(&Cell::default())
 }
 
+/// Hold every cell of `emulator`'s screen to the expression the hoist replaced.
+fn assert_classified_like_a_fresh_default(emulator: &PaneEmulator) {
+    let grid = emulator.term.grid();
+    let blank = Pen::of(&Cell::default());
+    for row in 0..grid.screen_lines() {
+        for col in 0..grid.columns() {
+            let cell = &grid[Point::new(Line(row as i32), Column(col))];
+            assert_eq!(
+                is_blank(cell, &blank),
+                tested_against_a_fresh_default(cell),
+                "row {row} column {col} is classified differently"
+            );
+        }
+    }
+}
+
 /// Everything that distinguishes a cell on the screen: text, attributes,
 /// hyperlinks, wide-character halves, and combining marks. Trailing spaces of
 /// each kind are what the reverse scan tests; the rest keeps the grid from being
@@ -47,28 +63,50 @@ fn fixture() -> PaneEmulator {
 #[test]
 fn every_cell_is_classified_blank_like_a_fresh_default_pen_would_classify_it() {
     let emulator = fixture();
+    assert_classified_like_a_fresh_default(&emulator);
+
     let grid = emulator.term.grid();
     let blank = Pen::of(&Cell::default());
-    let (mut blanks, mut written) = (0, 0);
+    let (mut spaces, mut written) = (0, 0);
     for row in 0..grid.screen_lines() {
         for col in 0..grid.columns() {
             let cell = &grid[Point::new(Line(row as i32), Column(col))];
-            assert_eq!(
-                is_blank(cell, &blank),
-                tested_against_a_fresh_default(cell),
-                "row {row} column {col} is classified differently"
-            );
             if cell.c == ' ' {
-                blanks += 1;
+                spaces += 1;
                 written += usize::from(!is_blank(cell, &blank));
             }
         }
     }
-    assert!(blanks > 0, "the fixture must have spaces to classify");
+    assert!(spaces > 0, "the fixture must have spaces to classify");
     assert!(
         written > 0,
         "and spaces that carry something, or this proves nothing"
     );
+}
+
+/// The same question for the shapes the mixed fixture does not reach: every
+/// attribute group on its own, both indexed colours, an untouched screen, and a
+/// wide character that wrapped, which leaves a leading spacer behind.
+#[test]
+fn each_kind_of_cell_is_classified_like_a_fresh_default_pen_would_classify_it() {
+    let table: &[(u16, u16, &str)] = &[
+        (4, 12, "\x1b[41m      "),
+        (4, 12, "\x1b[4m      "),
+        (4, 12, "\x1b[7m      "),
+        (4, 12, "\x1b[8;3;9m      "),
+        (4, 12, "\x1b[38;5;208;48;5;236m   "),
+        (4, 12, "\x1b[2J"),
+        (
+            3,
+            4,
+            "abc\x1b]8;;https://example.test/wrapped\x1b\\\u{d55c}",
+        ),
+    ];
+    for &(rows, cols, paint) in table {
+        let mut emulator = PaneEmulator::new(rows, cols, 0);
+        emulator.process(paint.as_bytes());
+        assert_classified_like_a_fresh_default(&emulator);
+    }
 }
 
 /// A blank cell's pen is also what an erased row leaves the reader on. Taking

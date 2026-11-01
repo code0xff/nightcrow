@@ -4,7 +4,8 @@
 //! The chunks and the ticks are the worker's own: each chunk goes through its
 //! tracking emulator and record, and the end of each simulated tick runs the same
 //! paced pass. The clock is passed in rather than read, so a window can be crossed
-//! without sleeping and a snapshot count is exact instead of a race.
+//! without sleeping and a snapshot count is exact instead of a race. The pace's own
+//! edges are held next door, in [`pace`](super::snapshot_pace).
 
 use super::{attach, spawn_hub};
 use crate::backend::PaneId;
@@ -16,12 +17,12 @@ use crate::session::terminal::hub_modes::PaneModeTracker;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-const PANE: PaneId = 11;
-const ROWS: u16 = 24;
-const COLS: u16 = 80;
+pub(super) const PANE: PaneId = 11;
+pub(super) const ROWS: u16 = 24;
+pub(super) const COLS: u16 = 80;
 
 /// The worker's own tick.
-const TICK: Duration = Duration::from_millis(8);
+pub(super) const TICK: Duration = Duration::from_millis(8);
 
 /// Nothing here races an assertion: every frame was queued before the client
 /// attached, so this is a drain rather than a deadline.
@@ -29,36 +30,16 @@ const QUEUED: Duration = Duration::from_millis(200);
 
 /// The paint that puts the pane on the alternate screen and gives it something
 /// worth snapshotting.
-const ENTER: &[u8] = b"\x1b[?1049h\x1b[2J\x1b[1;1HHEADER";
+pub(super) const ENTER: &[u8] = b"\x1b[?1049h\x1b[2J\x1b[1;1HHEADER";
 
 /// A frame of the shape a program repaints on its own timer.
-fn frame(n: usize) -> Vec<u8> {
+pub(super) fn frame(n: usize) -> Vec<u8> {
     format!("\x1b[2;1Hframe {n:04}\x1b[K").into_bytes()
 }
 
-/// A truecolour image renderer's worst case: every cell written and every cell a
-/// different colour, which is what makes a snapshot expensive to take.
-fn dense_paint(rows: u16, cols: u16) -> Vec<u8> {
-    use std::fmt::Write as _;
-    let mut paint = String::from("\x1b[?1049h");
-    for row in 0..rows {
-        let _ = write!(paint, "\x1b[{};1H", row + 1);
-        for col in 0..cols {
-            let _ = write!(
-                paint,
-                "\x1b[38;2;{};{};{}mX",
-                row % 255,
-                col % 255,
-                (row + col) % 255
-            );
-        }
-    }
-    paint.into_bytes()
-}
-
 /// A pane driven the way the worker drives one, without a process behind it.
-struct Desk {
-    hub: Arc<TerminalHub>,
+pub(super) struct Desk {
+    pub(super) hub: Arc<TerminalHub>,
     tracker: PaneModeTracker,
     /// What an attached client renders, fed the same bytes the pane produced.
     live: PaneEmulator,
@@ -71,8 +52,8 @@ struct Desk {
     restless: bool,
     /// Whether the pass is paced. The ignored measurement runs the unthrottled
     /// worker as the "before" side of its comparison.
-    paced: bool,
-    snapshots: usize,
+    pub(super) paced: bool,
+    pub(super) snapshots: usize,
 }
 
 impl Desk {
@@ -80,7 +61,7 @@ impl Desk {
         Self::sized(dir, ROWS, COLS)
     }
 
-    fn sized(dir: &tempfile::TempDir, rows: u16, cols: u16) -> Self {
+    pub(super) fn sized(dir: &tempfile::TempDir, rows: u16, cols: u16) -> Self {
         let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
         hub.register_pane(PANE, rows, cols, None, None);
         let now = Instant::now();
@@ -99,7 +80,7 @@ impl Desk {
     }
 
     /// One chunk of the pane's output, as the worker's event loop takes it.
-    fn output(&mut self, chunk: &[u8]) {
+    pub(super) fn output(&mut self, chunk: &[u8]) {
         self.live.process(chunk);
         if self
             .hub
@@ -110,7 +91,7 @@ impl Desk {
     }
 
     /// The end of one tick: the snapshot pass, then the clock moves on.
-    fn tick(&mut self) {
+    pub(super) fn tick(&mut self) {
         let restless = std::mem::take(&mut self.restless);
         let panes = if restless { vec![PANE] } else { Vec::new() };
         if self.paced {
@@ -179,7 +160,7 @@ fn replay(desk: &Desk) -> (PaneEmulator, usize) {
 
 /// Require that the record the hub holds right now rebuilds the live screen cell
 /// for cell, and return how many bytes that replay cost.
-fn assert_replay_matches_live(desk: &Desk) -> usize {
+pub(super) fn assert_replay_matches_live(desk: &Desk) -> usize {
     let (replayed, bytes) = replay(desk);
     assert_eq!(
         drawn(&replayed),
@@ -283,51 +264,4 @@ fn a_record_past_the_crowded_cap_keeps_its_replay_bounded() {
         "a megabyte of output must not replay as {replay_bytes} bytes"
     );
     desk.hub.stop();
-}
-
-/// Snapshots a busy pane costs per second, with and without the pace. Not a
-/// behavioural test and not run with the suite; kept because it is the reason the
-/// pace exists, and rerun after changing the pass. Two panes: an ordinary 24x80
-/// screen, and the 130x500 truecolour screen a snapshot is most expensive for.
-///
-/// ```text
-/// cargo test --release measure_snapshots_per_second -- --ignored --nocapture
-/// ```
-#[test]
-#[ignore]
-fn measure_snapshots_per_second_for_a_busy_pane() {
-    // Two seconds of the worker's tick.
-    let ticks = usize::try_from(Duration::from_secs(2).as_millis() / TICK.as_millis()).unwrap();
-    for (rows, cols) in [(ROWS, COLS), (130, 500)] {
-        let paint = if (rows, cols) == (ROWS, COLS) {
-            ENTER.to_vec()
-        } else {
-            dense_paint(rows, cols)
-        };
-        let mut measured = Vec::new();
-        for paced in [false, true] {
-            let dir = tempfile::TempDir::new().unwrap();
-            let mut desk = Desk::sized(&dir, rows, cols);
-            desk.paced = paced;
-            desk.output(&paint);
-            desk.tick();
-            let started = Instant::now();
-            for n in 0..ticks {
-                desk.output(&frame(n));
-                desk.tick();
-            }
-            let elapsed = started.elapsed();
-            let replay_bytes = assert_replay_matches_live(&desk);
-            measured.push((paced, desk.snapshots, elapsed, replay_bytes));
-            desk.hub.stop();
-        }
-        for (paced, snapshots, elapsed, replay_bytes) in measured {
-            let label = if paced { "paced" } else { "every tick" };
-            eprintln!(
-                "{rows}x{cols} {label}: {snapshots} snapshots over {ticks} ticks \
-                 ({:.0}/s), {elapsed:?} of work, replay {replay_bytes} bytes",
-                snapshots as f64 / 2.0
-            );
-        }
-    }
 }
