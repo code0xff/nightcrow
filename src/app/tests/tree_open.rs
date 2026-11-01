@@ -12,7 +12,7 @@ fn tree_open_on_directory_row_does_not_change_expansion() {
 
     app.tree_open_selected();
     assert!(
-        !app.git.view.tree.expanded.contains("src"),
+        !app.git.view.tree.expanded().contains("src"),
         "Enter must not expand a directory"
     );
     assert!(
@@ -25,7 +25,7 @@ fn tree_open_on_directory_row_does_not_change_expansion() {
     app.git.view.tree.selected = tree_index_of(&app, "src");
     app.tree_open_selected();
     assert!(
-        app.git.view.tree.expanded.contains("src"),
+        app.git.view.tree.expanded().contains("src"),
         "Enter must not collapse a directory"
     );
     drop(dir);

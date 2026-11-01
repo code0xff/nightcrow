@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 fn entry(name: &str, is_dir: bool) -> TreeEntry {
     TreeEntry {
@@ -11,11 +12,11 @@ fn entry(name: &str, is_dir: bool) -> TreeEntry {
 /// `main.rs` inside `src/`. Nothing expanded yet.
 fn sample() -> TreeView {
     let mut tv = TreeView::default();
-    tv.cache.insert(
+    tv.cache_mut().insert(
         "".to_string(),
         vec![entry("src", true), entry("README.md", false)],
     );
-    tv.cache
+    tv.cache_mut()
         .insert("src".to_string(), vec![entry("main.rs", false)]);
     tv
 }
@@ -34,7 +35,7 @@ fn visible_rows_shows_only_top_level_when_nothing_expanded() {
 #[test]
 fn visible_rows_includes_children_of_expanded_dir() {
     let mut tv = sample();
-    tv.expanded.insert("src".to_string());
+    tv.expanded_mut().insert("src".to_string());
     let rows = tv.visible_rows();
 
     assert_eq!(rows.len(), 3);
@@ -50,8 +51,8 @@ fn visible_rows_skips_expanded_dir_without_cached_children() {
     // `expanded` references a dir whose children were never read: it should
     // simply contribute no child rows rather than panic.
     let mut tv = sample();
-    tv.expanded.insert("src".to_string());
-    tv.cache.remove("src");
+    tv.expanded_mut().insert("src".to_string());
+    tv.cache_mut().remove("src");
 
     let rows = tv.visible_rows();
     assert_eq!(rows.len(), 2);
@@ -72,7 +73,7 @@ fn clamp_selection_pins_cursor_inside_row_count() {
 #[test]
 fn selected_path_follows_visible_rows() {
     let mut tv = sample();
-    tv.expanded.insert("src".to_string());
+    tv.expanded_mut().insert("src".to_string());
     tv.selected = 1;
     assert_eq!(tv.selected_path().as_deref(), Some("src/main.rs"));
 }
@@ -99,11 +100,11 @@ fn idx(path: &str) -> TreeIndexEntry {
 /// seeded so the filter can be exercised without a filesystem.
 fn indexed_sample() -> TreeView {
     let mut tv = TreeView::default();
-    tv.cache.insert(
+    tv.cache_mut().insert(
         "".to_string(),
         vec![entry("src", true), entry("README.md", false)],
     );
-    tv.cache.insert(
+    tv.cache_mut().insert(
         "src".to_string(),
         vec![entry("ui", true), entry("main.rs", false)],
     );
@@ -189,6 +190,81 @@ fn cancel_search_clears_all_transient_state() {
     assert!(tv.index.is_empty());
     assert!(tv.show_set.is_empty());
     assert_eq!(tv.match_count, 0);
+}
+
+#[test]
+fn rows_are_reused_until_the_expansion_changes() {
+    let mut tv = sample();
+    let first = tv.rows();
+    assert!(Arc::ptr_eq(&first, &tv.rows()));
+
+    tv.expanded_mut().insert("src".to_string());
+    let expanded = tv.rows();
+
+    assert!(!Arc::ptr_eq(&first, &expanded));
+    assert_eq!(expanded.len(), 3);
+    assert_eq!(expanded[1].path, "src/main.rs");
+}
+
+#[test]
+fn rows_invalidate_when_a_directory_collapses() {
+    let mut tv = sample();
+    tv.expanded_mut().insert("src".to_string());
+    let expanded = tv.rows();
+    assert_eq!(expanded.len(), 3);
+
+    tv.expanded_mut().remove("src");
+    let collapsed = tv.rows();
+
+    assert!(!Arc::ptr_eq(&expanded, &collapsed));
+    assert_eq!(collapsed.len(), 2);
+    assert_eq!(collapsed[0].path, "src");
+}
+
+#[test]
+fn rows_invalidate_when_cached_children_change() {
+    let mut tv = sample();
+    let first = tv.rows();
+
+    tv.cache_mut()
+        .insert("src".to_string(), vec![entry("lib.rs", false)]);
+    tv.expanded_mut().insert("src".to_string());
+    let rebuilt = tv.rows();
+
+    assert!(!Arc::ptr_eq(&first, &rebuilt));
+    assert_eq!(rebuilt.len(), 3);
+    assert_eq!(rebuilt[1].path, "src/lib.rs");
+}
+
+#[test]
+fn rows_invalidate_when_the_cache_is_cleared() {
+    let mut tv = sample();
+    let first = tv.rows();
+
+    tv.cache_mut().clear();
+    let empty = tv.rows();
+
+    assert!(!Arc::ptr_eq(&first, &empty));
+    assert!(empty.is_empty());
+}
+
+#[test]
+fn rows_follow_search_changes() {
+    let mut tv = indexed_sample();
+    let unfiltered = tv.rows();
+
+    tv.search_active = true;
+    tv.search_query.set("mod");
+    tv.recompute_filter();
+    let filtered = tv.rows();
+
+    assert!(!Arc::ptr_eq(&unfiltered, &filtered));
+    assert_eq!(filtered.len(), 3);
+    assert_eq!(filtered[2].path, "src/ui/mod.rs");
+
+    tv.cancel_search();
+    let restored = tv.rows();
+    assert_eq!(restored.len(), 2);
 }
 
 #[test]

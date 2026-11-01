@@ -132,10 +132,10 @@ fn tree_app(dirs: usize, files_per_dir: usize) -> App {
                 is_dir: false,
             })
             .collect();
-        tree.cache.insert(name.clone(), children);
-        tree.expanded.insert(name);
+        tree.cache_mut().insert(name.clone(), children);
+        tree.expanded_mut().insert(name);
     }
-    tree.cache.insert(String::new(), roots);
+    tree.cache_mut().insert(String::new(), roots);
     app
 }
 

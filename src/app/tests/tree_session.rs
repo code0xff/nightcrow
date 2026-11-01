@@ -19,7 +19,7 @@ fn a_change_in_a_collapsed_directory_updates_search_results() {
     }
     let before = app.git.view.tree.match_count;
     assert!(
-        !app.git.view.tree.expanded.contains("src"),
+        !app.git.view.tree.expanded().contains("src"),
         "src stays collapsed — the point of the test"
     );
 
@@ -178,10 +178,10 @@ fn restore_tree_session_ignores_unsafe_expanded_paths() {
 
     assert_eq!(app.git.view.mode, ViewMode::Tree);
     // Only the safe, real directory was expanded/cached.
-    assert!(app.git.view.tree.expanded.contains("src"));
-    assert!(!app.git.view.tree.expanded.contains("../../.."));
-    assert!(!app.git.view.tree.expanded.contains("/etc"));
-    assert!(!app.git.view.tree.cache.contains_key("/etc"));
+    assert!(app.git.view.tree.expanded().contains("src"));
+    assert!(!app.git.view.tree.expanded().contains("../../.."));
+    assert!(!app.git.view.tree.expanded().contains("/etc"));
+    assert!(!app.git.view.tree.cache().contains_key("/etc"));
     drop(dir);
 }
 
@@ -203,7 +203,7 @@ fn restore_tree_session_prunes_expansion_gone_since_save() {
 
     assert_eq!(app.git.view.mode, ViewMode::Tree);
     // `src` no longer exists on disk, so it must not be kept as expanded...
-    assert!(!app.git.view.tree.expanded.contains("src"));
+    assert!(!app.git.view.tree.expanded().contains("src"));
     // ...and the moved-to directory is visible at the root.
     assert!(
         app.git
@@ -274,7 +274,7 @@ fn tree_session_round_trips_mode_expansion_and_selection() {
     other.restore_session(&state);
     other.flush_git_loads_for_test(Duration::from_secs(2));
     assert_eq!(other.git.view.mode, ViewMode::Tree);
-    assert!(other.git.view.tree.expanded.contains("src"));
+    assert!(other.git.view.tree.expanded().contains("src"));
     assert_eq!(
         other.git.view.tree.selected_path().as_deref(),
         Some("src/main.rs")

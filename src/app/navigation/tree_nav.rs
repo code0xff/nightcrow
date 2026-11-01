@@ -3,7 +3,7 @@ use crate::ui::tree_view::{TreeIndexEntry, parent_path};
 
 impl App {
     fn move_tree_selection(&mut self, delta: isize) {
-        let len = self.git.view.tree.visible_rows().len();
+        let len = self.git.view.tree.rows().len();
         if len == 0 {
             self.git.view.tree.selected = 0;
             return;
@@ -36,17 +36,17 @@ impl App {
 
     pub fn tree_expand(&mut self) {
         let selected = self.git.view.tree.selected;
-        let Some(row) = self.git.view.tree.visible_rows().into_iter().nth(selected) else {
+        let Some(row) = self.git.view.tree.rows().get(selected).cloned() else {
             return;
         };
-        if !row.is_dir || self.git.view.tree.expanded.contains(&row.path) {
+        if !row.is_dir || self.git.view.tree.expanded().contains(&row.path) {
             return;
         }
         if row.depth + 1 > self.git.tree_config.max_depth {
             return;
         }
         self.ensure_tree_children(&row.path);
-        self.git.view.tree.expanded.insert(row.path);
+        self.git.view.tree.expanded_mut().insert(row.path);
         // Visible rows changed: drop a stale horizontal-scroll width bound.
         self.git.view.tree.row_width_cache.set(None);
         // A newly expanded directory becomes visible — start watching it.
@@ -56,11 +56,11 @@ impl App {
     // Collapse the selected directory if expanded; otherwise move the cursor
     // up to its parent directory row (so repeated `Left` walks back out).
     pub fn tree_collapse(&mut self) {
-        let rows = self.git.view.tree.visible_rows();
+        let rows = self.git.view.tree.rows();
         let Some(row) = rows.get(self.git.view.tree.selected) else {
             return;
         };
-        if row.is_dir && self.git.view.tree.expanded.contains(&row.path) {
+        if row.is_dir && self.git.view.tree.expanded().contains(&row.path) {
             let path = row.path.clone();
             // Drop the directory and every descendant so re-expanding later
             // starts collapsed rather than restoring a deep subtree the user
@@ -69,7 +69,7 @@ impl App {
             self.git
                 .view
                 .tree
-                .expanded
+                .expanded_mut()
                 .retain(|p| p != &path && !p.starts_with(&prefix));
             self.git.view.tree.row_width_cache.set(None);
             // The collapsed subtree is no longer visible — stop watching it.
@@ -91,7 +91,7 @@ impl App {
     // a directory row does nothing here.
     pub fn tree_open_selected(&mut self) {
         let selected = self.git.view.tree.selected;
-        let Some(row) = self.git.view.tree.visible_rows().into_iter().nth(selected) else {
+        let Some(row) = self.git.view.tree.rows().get(selected).cloned() else {
             return;
         };
         if row.is_dir {
@@ -135,7 +135,7 @@ impl App {
         // the filtered view and would otherwise hold descriptors for the whole
         // tree until Tree mode was left.
         self.sync_tree_watches();
-        let row_count = self.git.view.tree.visible_rows().len();
+        let row_count = self.git.view.tree.rows().len();
         self.git.view.tree.clamp_selection(row_count);
         self.preview_tree_selected();
     }
@@ -155,20 +155,20 @@ impl App {
             // collapsed — the user opens it explicitly.
             let mut p = parent_path(path);
             while let Some(parent) = p {
-                self.git.view.tree.expanded.insert(parent.to_string());
+                self.git.view.tree.expanded_mut().insert(parent.to_string());
                 p = parent_path(parent);
             }
         }
         self.git.view.tree.cancel_search();
         self.sync_tree_watches();
         if let Some(path) = target {
-            let rows = self.git.view.tree.visible_rows();
+            let rows = self.git.view.tree.rows();
             if let Some(idx) = rows.iter().position(|r| r.path == path) {
                 self.git.view.tree.selected = idx;
             }
         }
         self.git.view.tree.scroll_x = 0;
-        let row_count = self.git.view.tree.visible_rows().len();
+        let row_count = self.git.view.tree.rows().len();
         self.git.view.tree.clamp_selection(row_count);
         self.preview_tree_selected();
     }
@@ -178,7 +178,7 @@ impl App {
     // the path). Falls back to the first row when nothing matches directly.
     fn reset_tree_selection_after_filter(&mut self) {
         self.git.view.tree.scroll_x = 0;
-        let rows = self.git.view.tree.visible_rows();
+        let rows = self.git.view.tree.rows();
         if rows.is_empty() {
             self.git.view.tree.selected = 0;
             self.preview_tree_selected();
@@ -203,7 +203,7 @@ impl App {
         let mut stack = vec![(String::new(), 0usize)];
         while let Some((dir, depth)) = stack.pop() {
             self.ensure_tree_children(&dir);
-            let children = match self.git.view.tree.cache.get(&dir) {
+            let children = match self.git.view.tree.cache().get(&dir) {
                 Some(c) => c.clone(),
                 None => continue,
             };

@@ -8,16 +8,32 @@ use ratatui::{
     text::{Line, Span},
     widgets::ListItem,
 };
+use std::ops::Range;
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
+    render_with(frame, app, area, accent, super::RowsScope::Window);
+}
+
+#[cfg(test)]
+pub(super) fn render_full(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
+    render_with(frame, app, area, accent, super::RowsScope::Full);
+}
+
+fn render_with(frame: &mut Frame, app: &App, area: Rect, accent: Color, scope: super::RowsScope) {
     if app.log_view().drill_down {
-        render_file_list(frame, app, area, accent);
+        render_file_list(frame, app, area, accent, scope);
     } else {
-        render_commit_list(frame, app, area, accent);
+        render_commit_list(frame, app, area, accent, scope);
     }
 }
 
-fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
+fn render_commit_list(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    accent: Color,
+    scope: super::RowsScope,
+) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
 
@@ -39,19 +55,16 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let total_count = app.log_view().commits.len();
 
     let scroll_x = app.log_view().commit_scroll_x;
-    let items: Vec<ListItem> = filtered
-        .iter()
-        .map(|&i| {
-            let entry = &app.log_view().commits[i];
-            ListItem::new(row::commit_row(
-                entry,
-                app.log_decorations(),
-                list_area.width,
-                scroll_x,
-                accent,
-            ))
-        })
-        .collect();
+    let selected_pos = super::filtered_position(filtered, app.log_view().selected);
+    let window = super::rows_to_render(scope, filtered.len(), list_area, selected_pos);
+    let items = commit_items(
+        app,
+        filtered,
+        window.clone(),
+        list_area.width,
+        scroll_x,
+        accent,
+    );
 
     let title = if total_count == 0 {
         format!(" {} Log (no commits) ", super::jump_legend(app, '1'))
@@ -64,7 +77,7 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         format!(" {} Log ({total_count}) ", super::jump_legend(app, '1'))
     };
 
-    let selected_pos = filtered.iter().position(|&i| i == app.log_view().selected);
+    let selected_pos = super::windowed_selection(selected_pos, &window);
     super::render_selectable_list(frame, list_area, title, items, selected_pos, border_style);
 
     if let Some(sa) = search_area {
@@ -78,7 +91,13 @@ fn render_commit_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     }
 }
 
-fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
+fn render_file_list(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    accent: Color,
+    scope: super::RowsScope,
+) {
     let focused = app.focus == Focus::FileList;
     let border_style = super::focused_border_style(focused, accent);
 
@@ -100,28 +119,9 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
     let total_count = app.log_view().commit_files.len();
 
     let scroll_x = app.log_view().file_scroll_x;
-    let items: Vec<ListItem> = filtered
-        .iter()
-        .map(|&i| {
-            let f = &app.log_view().commit_files[i];
-            let path: std::borrow::Cow<'_, str> = match f.display_path() {
-                std::borrow::Cow::Borrowed(_) => {
-                    std::borrow::Cow::Borrowed(super::char_offset(&f.path, scroll_x))
-                }
-                std::borrow::Cow::Owned(display) => {
-                    std::borrow::Cow::Owned(super::char_offset(&display, scroll_x).to_string())
-                }
-            };
-            let line = Line::from(vec![
-                Span::styled(
-                    format!("{} ", f.short_code()),
-                    Style::default().fg(super::status_color(f.most_severe())),
-                ),
-                Span::raw(path),
-            ]);
-            ListItem::new(line)
-        })
-        .collect();
+    let selected_pos = super::filtered_position(filtered, app.log_view().file_selected);
+    let window = super::rows_to_render(scope, filtered.len(), list_area, selected_pos);
+    let items = file_items(app, filtered, window.clone(), scroll_x);
 
     let commit_summary = app
         .log_view()
@@ -146,9 +146,7 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         title_base
     };
 
-    let selected_pos = filtered
-        .iter()
-        .position(|&i| i == app.log_view().file_selected);
+    let selected_pos = super::windowed_selection(selected_pos, &window);
     super::render_selectable_list(frame, list_area, title, items, selected_pos, border_style);
 
     if let Some(sa) = search_area {
@@ -160,6 +158,61 @@ fn render_file_list(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
             accent,
         );
     }
+}
+
+fn commit_items<'a>(
+    app: &'a App,
+    filtered: &[usize],
+    window: Range<usize>,
+    width: u16,
+    scroll_x: usize,
+    accent: Color,
+) -> Vec<ListItem<'a>> {
+    let commits = &app.log_view().commits;
+    let decorations = app.log_decorations();
+    filtered[window]
+        .iter()
+        .map(|&index| {
+            ListItem::new(row::commit_row(
+                &commits[index],
+                decorations,
+                width,
+                scroll_x,
+                accent,
+            ))
+        })
+        .collect()
+}
+
+fn file_items<'a>(
+    app: &'a App,
+    filtered: &[usize],
+    window: Range<usize>,
+    scroll_x: usize,
+) -> Vec<ListItem<'a>> {
+    let files = &app.log_view().commit_files;
+    filtered[window]
+        .iter()
+        .map(|&index| {
+            let f = &files[index];
+            let path: std::borrow::Cow<'_, str> = match f.display_path() {
+                std::borrow::Cow::Borrowed(_) => {
+                    std::borrow::Cow::Borrowed(super::char_offset(&f.path, scroll_x))
+                }
+                std::borrow::Cow::Owned(display) => {
+                    std::borrow::Cow::Owned(super::char_offset(&display, scroll_x).to_string())
+                }
+            };
+            let line = Line::from(vec![
+                Span::styled(
+                    format!("{} ", f.short_code()),
+                    Style::default().fg(super::status_color(f.most_severe())),
+                ),
+                Span::raw(path),
+            ]);
+            ListItem::new(line)
+        })
+        .collect()
 }
 
 /// Char budget for the drill-down title inside `area`, reserving two cells

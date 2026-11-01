@@ -1,8 +1,16 @@
 use crate::git::diff::ChangedFile;
 use crate::ui::SearchQuery;
+use crate::ui::hot_stage::next_hot_deadline as next_hot_transition;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::time::{Duration, Instant, SystemTime};
+
+#[derive(Clone, Copy)]
+struct HotDeadlineCache {
+    hot_window_secs: u64,
+    observed_at: SystemTime,
+    deadline: Option<SystemTime>,
+}
 
 #[derive(Default)]
 pub struct StatusView {
@@ -25,6 +33,11 @@ pub struct StatusView {
     /// same-length content swaps (e.g. renames), so mutations must go through
     /// `set_files`, which clears this cell on every assignment.
     pub(crate) path_width_cache: Cell<Option<(usize, usize)>>,
+    /// Memoized earliest hot-stage transition over the filtered rows. The
+    /// event loop asks for it every tick, so recomputing it per tick would
+    /// walk the whole file list; it is dropped when the files, filter, or hot
+    /// table change and once the stored deadline passes.
+    hot_deadline_cache: Cell<Option<HotDeadlineCache>>,
 }
 
 impl StatusView {
@@ -34,6 +47,7 @@ impl StatusView {
     pub(crate) fn set_files(&mut self, files: Vec<ChangedFile>) {
         self.files = files;
         self.path_width_cache.set(None);
+        self.invalidate_hot_deadline();
     }
 
     pub fn clear_search(&mut self) {
@@ -43,6 +57,7 @@ impl StatusView {
     /// Refresh `filter_cache` from `files` and the current query. Callers
     /// must invoke this after mutating `files` or `search_query`.
     pub(crate) fn recompute_filter(&mut self) {
+        self.invalidate_hot_deadline();
         self.filter_cache.clear();
         if self.search_query.is_empty() {
             self.filter_cache.extend(0..self.files.len());
@@ -58,6 +73,43 @@ impl StatusView {
 
     pub fn start_search(&mut self) {
         self.search_active = true;
+    }
+
+    pub(crate) fn invalidate_hot_deadline(&self) {
+        self.hot_deadline_cache.set(None);
+    }
+
+    /// Earliest stage transition among the filtered rows, memoized until the
+    /// deadline passes or the inputs are invalidated.
+    pub(crate) fn next_hot_deadline(
+        &self,
+        now: SystemTime,
+        hot_window: Duration,
+    ) -> Option<SystemTime> {
+        let hot_window_secs = hot_window.as_secs();
+        if let Some(cached) = self.hot_deadline_cache.get()
+            && cached.hot_window_secs == hot_window_secs
+            && now >= cached.observed_at
+            && cached.deadline.is_none_or(|deadline| now < deadline)
+        {
+            return cached.deadline;
+        }
+        let deadline = self.compute_hot_deadline(now, hot_window);
+        self.hot_deadline_cache.set(Some(HotDeadlineCache {
+            hot_window_secs,
+            observed_at: now,
+            deadline,
+        }));
+        deadline
+    }
+
+    fn compute_hot_deadline(&self, now: SystemTime, hot_window: Duration) -> Option<SystemTime> {
+        self.filter_cache
+            .iter()
+            .filter_map(|&idx| self.files.get(idx))
+            .filter_map(|file| self.hot_table.get(&file.path))
+            .filter_map(|mtime| next_hot_transition(*mtime, now, hot_window))
+            .min()
     }
 
     /// Exit the search bar and clear any active query. Always recomputes the
