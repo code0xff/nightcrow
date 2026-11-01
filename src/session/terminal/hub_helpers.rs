@@ -130,8 +130,12 @@ pub(super) struct PaneState {
     /// what every other client has seen.
     ///
     /// **Never dropped, only superseded.** Terminal bytes cannot be skipped, so
-    /// outgrowing [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`] forces a fresh
-    /// snapshot (which empties this) rather than evicting from the front.
+    /// outgrowing [`limits::MAX_TERMINAL_SCROLLBACK_BYTES`] asks for a fresh
+    /// snapshot (which empties this) rather than evicting from the front. A torn
+    /// stream defers that snapshot to the desperate path at about twice the
+    /// limit plus one chunk, and an open synchronized update defers it to the
+    /// parser's buffer limit or update timeout; see the replay section of
+    /// [`docs/architecture/session.md`](../../../../docs/architecture/session.md).
     pub(super) since: VecDeque<u8>,
     /// The size the PTY is currently set to, so a connecting client can skip a
     /// resize that would change nothing.
