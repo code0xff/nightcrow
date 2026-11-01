@@ -5,6 +5,7 @@
 use super::frame::{ServerMessage, TerminalFrame};
 use super::hub_helpers::PaneState;
 use crate::backend::PaneId;
+use std::sync::Arc;
 use std::sync::mpsc::SyncSender;
 
 /// Initial replay frames are bounded independently from the one frame that
@@ -59,7 +60,7 @@ fn send_replay(queue: &mut ReplayQueue<'_>, pane: PaneId, data: &[u8]) -> bool {
     data.chunks(REPLAY_CHUNK_BYTES).all(|chunk| {
         queue.send(TerminalFrame::Output {
             pane,
-            data: chunk.to_vec(),
+            data: Arc::from(chunk),
         })
     })
 }

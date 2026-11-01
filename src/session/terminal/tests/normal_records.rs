@@ -44,7 +44,7 @@ fn replay_text(session: &TerminalSession) -> String {
         if let TerminalFrame::Output { pane, data } = frame
             && pane == PANE
         {
-            joined.extend(data);
+            joined.extend(data.iter().copied());
         }
     }
     String::from_utf8_lossy(&joined).to_string()

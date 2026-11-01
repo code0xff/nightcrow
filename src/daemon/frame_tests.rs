@@ -51,6 +51,40 @@ fn raw_terminal_bytes_pass_through_unchanged() {
 }
 
 #[test]
+fn a_frame_is_the_kind_length_and_payload_with_nothing_between() {
+    let mut wire = Vec::new();
+    write_frame(&mut wire, &Frame::terminal(vec![9, 8, 7])).expect("writing fits the limit");
+    assert_eq!(wire, [2, 0, 0, 0, 3, 9, 8, 7]);
+}
+
+#[test]
+fn a_writer_that_accepts_little_at_a_time_still_gets_the_whole_frame() {
+    // A socket can accept part of what it was offered, and a writer with only
+    // `write` is offered the first slice and nothing else.
+    struct Trickle {
+        written: Vec<u8>,
+    }
+    impl std::io::Write for Trickle {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            let taken = buf.len().min(2);
+            self.written.extend_from_slice(&buf[..taken]);
+            Ok(taken)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let frame = Frame::terminal(vec![1, 2, 3, 4, 5]);
+    let mut writer = Trickle {
+        written: Vec::new(),
+    };
+    write_frame(&mut writer, &frame).expect("a trickling writer still takes the frame");
+    assert_eq!(writer.written, [2, 0, 0, 0, 5, 1, 2, 3, 4, 5]);
+}
+
+#[test]
 fn a_closed_stream_between_frames_reads_as_the_end() {
     let mut empty: &[u8] = &[];
     assert!(

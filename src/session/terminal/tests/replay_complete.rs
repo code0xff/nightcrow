@@ -47,7 +47,7 @@ fn empty_replay_marker_precedes_the_initial_size_verdict() {
     );
     assert!(matches!(
         session.next_frame(Duration::ZERO),
-        Some(TerminalFrame::Output { pane: 7, data }) if data == b"LIVE"
+        Some(TerminalFrame::Output { pane: 7, data }) if &data[..] == b"LIVE"
     ));
     hub.stop();
 }
