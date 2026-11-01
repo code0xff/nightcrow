@@ -96,6 +96,8 @@ fn each_kind_of_cell_is_classified_like_a_fresh_default_pen_would_classify_it() 
         (4, 12, "\x1b[8;3;9m      "),
         (4, 12, "\x1b[38;5;208;48;5;236m   "),
         (4, 12, "\x1b[2J"),
+        // A space carrying a combining mark: the `zerowidth` half of the test.
+        (4, 12, " \u{0301}    "),
         (
             3,
             4,

@@ -57,7 +57,7 @@ pub(super) struct Desk {
 }
 
 impl Desk {
-    fn new(dir: &tempfile::TempDir) -> Self {
+    pub(super) fn new(dir: &tempfile::TempDir) -> Self {
         Self::sized(dir, ROWS, COLS)
     }
 
