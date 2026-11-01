@@ -5,6 +5,7 @@ use crate::session::terminal::frame::{ServerMessage, TerminalFrame};
 use crate::session::terminal::hub_helpers::PaneState;
 use crate::session::terminal::hub_modes::Observed;
 use crate::session::terminal::hub_replay::{REPLAY_CHUNK_BYTES, ReplayQueue};
+use crate::session::terminal::hub_replay_record::{Chunks, Sink};
 use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -173,4 +174,41 @@ fn a_replay_is_cut_into_the_same_one_mib_frames() {
         assembled[sizes[0]..].iter().all(|&byte| byte == b'x'),
         "the record's bytes must arrive exactly once and in order"
     );
+}
+
+/// The cut points themselves, at the sizes where a chunk boundary is easiest to get
+/// wrong: nothing at all, one byte, a byte short of a chunk, a chunk exactly, a byte
+/// over, and two whole chunks. Capture fills these chunks in uneven writes, so the
+/// boundary falls inside a write rather than the end of one.
+#[test]
+fn replay_chunks_are_cut_where_the_contract_cuts_them() {
+    for total in [
+        0,
+        1,
+        REPLAY_CHUNK_BYTES - 1,
+        REPLAY_CHUNK_BYTES,
+        REPLAY_CHUNK_BYTES + 1,
+        2 * REPLAY_CHUNK_BYTES,
+    ] {
+        let bytes = vec![b'x'; total];
+        let mut chunks = Chunks::new(total);
+        for piece in bytes.chunks(7) {
+            chunks.write(piece);
+        }
+        let chunks = chunks.finish();
+
+        let sizes: Vec<usize> = chunks.iter().map(|chunk| chunk.len()).collect();
+        let cuts: Vec<usize> = bytes.chunks(REPLAY_CHUNK_BYTES).map(<[u8]>::len).collect();
+        assert_eq!(
+            sizes, cuts,
+            "a {total}-byte record must be cut where the contract cuts it"
+        );
+        assert!(
+            chunks
+                .iter()
+                .flat_map(|chunk| chunk.iter().copied())
+                .eq(bytes),
+            "a {total}-byte record must arrive as its own bytes, once and in order"
+        );
+    }
 }
