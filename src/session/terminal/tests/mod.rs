@@ -34,6 +34,8 @@ mod zoom;
 
 use crate::backend::PaneId;
 use crate::session::terminal::frame::TerminalFrame;
+use crate::session::terminal::{ConcurrencyTestPoint, TerminalHub};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -46,6 +48,28 @@ use super::TerminalSession;
 /// delays the failure verdict; passing runs still finish the instant the
 /// frame arrives. Mirrors `backend::pty::tests::PTY_TEST_DEADLINE`.
 pub(super) const SHELL_TEST_DEADLINE: Duration = Duration::from_secs(15);
+
+/// How long a test waits for a connection to reach a point a hook announces.
+pub(super) const HOOK_DEADLINE: Duration = Duration::from_secs(5);
+
+/// Hold the next connection at the replay boundary: the receiver fires once the
+/// hub's state lock is free again and the replay is not framed yet, and sending on
+/// the returned sender lets it continue.
+///
+/// The gate is one-shot: a test that connects anything else afterwards installs a
+/// no-op hook first.
+pub(super) fn pause_at_framing(hub: &Arc<TerminalHub>) -> (mpsc::Receiver<()>, mpsc::Sender<()>) {
+    let (framing, reached) = mpsc::channel();
+    let (resume, wait) = mpsc::channel();
+    let wait = Mutex::new(wait);
+    hub.set_concurrency_test_hook(move |point| {
+        if point == ConcurrencyTestPoint::ReplayFraming {
+            framing.send(()).ok();
+            wait.lock().expect("resume gate poisoned").recv().ok();
+        }
+    });
+    (reached, resume)
+}
 
 pub(super) fn wait_for<T>(mut take: impl FnMut() -> Option<T>) -> Option<T> {
     let deadline = Instant::now() + SHELL_TEST_DEADLINE;

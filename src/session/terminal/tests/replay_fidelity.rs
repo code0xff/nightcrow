@@ -198,3 +198,96 @@ fn an_alternate_screen_replay_lands_the_live_screen() {
     live.extend_from_slice(tail);
     assert_same_screen(&replay, &live);
 }
+
+/// An alternate-screen program that was started from a normal screen with history:
+/// the replay has to carry that normal screen under it, because it is what the
+/// client is returned to when the program exits, and the bytes recorded since the
+/// alternate snapshot arrive through a ring that has wrapped.
+#[test]
+fn an_alternate_screen_replay_carries_the_normal_screen_under_it() {
+    let history = b"\x1b[33mNORMAL HISTORY\x1b[0m\r\nSECOND LINE\r\n";
+    let after = b"NORMAL TAIL\r\n";
+    let entered = b"\x1b[?1049h\x1b[2J\x1b[36mALT SCREEN\x1b[0m";
+    let alt_tail = b"\x1b[3;1HALT LINE\x1b[4;1HALT TAIL\x1b[5;1HALT BOTTOM";
+
+    let mut tracker = PaneModeTracker::default();
+    tracker.observe(PANE, history, || (ROWS, COLS));
+    let snapshot = tracker.snapshot(PANE).expect("the tracker saw the history");
+    tracker.observe(PANE, after, || (ROWS, COLS));
+    let observed = tracker.observe(PANE, entered, || (ROWS, COLS));
+    assert!(
+        observed.modes.alt_screen,
+        "the fixture must enter the alt screen"
+    );
+    let screen = tracker.snapshot(PANE).expect("the tracker saw the switch");
+
+    let mut normal_stream = history.to_vec();
+    normal_stream.extend_from_slice(after);
+    // One byte of the history's introducer already evicted, as a long attachment
+    // leaves the ring; the snapshot is what repairs the fragment.
+    let ring = wrapped_ring(&normal_stream, 1);
+    assert!(
+        !ring.as_slices().1.is_empty(),
+        "the fixture must wrap the scrollback ring"
+    );
+    let covered = history.len() - 1;
+
+    let since = wrapped_ring(alt_tail, 0);
+    assert!(
+        !since.as_slices().1.is_empty(),
+        "the fixture must wrap the since ring"
+    );
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = super::spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
+    install(
+        &hub,
+        PaneState {
+            id: PANE,
+            title: None,
+            scrollback: ring,
+            normal_screen: snapshot,
+            covered,
+            screen,
+            since,
+            rows: ROWS,
+            cols: COLS,
+            modes: observed.modes,
+        },
+    );
+
+    let replay = replay_bytes(&hub);
+    hub.stop();
+
+    let mut live = normal_stream;
+    live.extend_from_slice(entered);
+    live.extend_from_slice(alt_tail);
+    assert_same_screen(&replay, &live);
+
+    let text = String::from_utf8_lossy(&replay).to_string();
+    assert!(
+        text.contains("NORMAL TAIL"),
+        "the whole normal record must be replayed, got: {text:?}"
+    );
+    let normal_tail = text.find("NORMAL TAIL").expect("checked above");
+    let alt_screen = text
+        .find("\x1b[?1049h")
+        .expect("the prelude must switch to the alt screen");
+    assert!(
+        normal_tail < alt_screen,
+        "the normal screen under the program must arrive before it, got: {text:?}"
+    );
+    assert!(text.contains("ALT BOTTOM"), "the since tail must arrive");
+
+    // What the client is left on when the program exits: the normal screen, which
+    // only the record replayed under the alternate one carries.
+    let mut from_replay = rendered(&replay);
+    let mut from_live = rendered(&live);
+    from_replay.process(b"\x1b[?1049l");
+    from_live.process(b"\x1b[?1049l");
+    assert_eq!(
+        drawn(&from_replay),
+        drawn(&from_live),
+        "the normal screen under the program must be replayed too"
+    );
+}
