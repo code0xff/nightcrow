@@ -5,11 +5,18 @@ use crate::session::terminal::{self, ClientMessage, TerminalFrame};
 use crate::web::common::conn;
 use std::io::Write;
 use std::net::TcpStream;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tungstenite::Message;
 
 /// The longest `viewer` id accepted. Long enough for a UUID with room to spare.
 const MAX_VIEWER_ID: usize = 64;
+
+/// Bounds on how much output one drain may queue before flushing. A pane that
+/// writes more often than the drain poll would otherwise keep the drain going
+/// and hold everything it produced until the burst ends.
+const FLUSH_FRAMES: usize = 64;
+const FLUSH_BYTES: usize = 32 * 1024;
+const FLUSH_AFTER: Duration = Duration::from_millis(4);
 
 /// A page's identity for the session's size ownership, from what it called
 /// itself.
@@ -144,6 +151,9 @@ pub(in crate::web::viewer::server) fn serve_terminal(
     let mut unflushed = false;
     loop {
         let mut wrote = false;
+        let mut batch_frames = 0;
+        let mut batch_bytes = 0;
+        let mut batch_started: Option<Instant> = None;
         // Drain everything queued for us before blocking on the socket, so
         // output is not held back waiting for the client to say something.
         while let Some(frame) = session.next_frame(Duration::from_millis(1)) {
@@ -155,8 +165,32 @@ pub(in crate::web::viewer::server) fn serve_terminal(
             };
             // `write` queues without flushing, so a burst leaves as one flush
             // below instead of a syscall pair per frame.
+            let len = message.len();
             match ws.write(message) {
-                Ok(()) => wrote = true,
+                Ok(()) => {
+                    wrote = true;
+                    batch_frames += 1;
+                    batch_bytes += len;
+                    let started = *batch_started.get_or_insert_with(Instant::now);
+                    if batch_frames >= FLUSH_FRAMES
+                        || batch_bytes >= FLUSH_BYTES
+                        || started.elapsed() >= FLUSH_AFTER
+                    {
+                        match ws.flush() {
+                            Ok(()) => {
+                                wrote = false;
+                                batch_frames = 0;
+                                batch_bytes = 0;
+                                batch_started = None;
+                            }
+                            Err(err) if stalled_not_gone(&err) => {
+                                unflushed = true;
+                                break;
+                            }
+                            Err(err) => return note_end(&err, "flush"),
+                        }
+                    }
+                }
                 // Stop pulling from the hub while the socket will not take it,
                 // so what is still queued backs up where the cap is: the hub's
                 // own queue, whose overflow disconnects a client that has
