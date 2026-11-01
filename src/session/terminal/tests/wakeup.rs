@@ -28,9 +28,24 @@ const ECHO_LINE: &str = "read line; printf 'nightcrow-%s' \"$line\"";
 #[cfg(windows)]
 const ECHO_LINE: &str = "[Console]::Write('nightcrow-'+[Console]::ReadLine())";
 
+/// Far past any wake test's deadline: with the cap out of reach, only a producer's
+/// signal can bring the worker back in time, so a missing one fails the test
+/// rather than being rescued by the cap.
+const HIGH_CAP: Duration = Duration::from_secs(30);
+
 /// A hub with nothing to do: no startup terminals and no clients.
 fn idle_hub(dir: &tempfile::TempDir) -> Arc<TerminalHub> {
-    spawn_hub_with_auto_open(&dir.path().to_string_lossy(), Vec::new(), Vec::new(), false)
+    raise_cap(spawn_hub_with_auto_open(
+        &dir.path().to_string_lossy(),
+        Vec::new(),
+        Vec::new(),
+        false,
+    ))
+}
+
+fn raise_cap(hub: Arc<TerminalHub>) -> Arc<TerminalHub> {
+    hub.set_wait_cap(HIGH_CAP);
+    hub
 }
 
 /// Ask for one terminal and wait for its id.
@@ -61,7 +76,12 @@ fn stop_wakes_a_parked_worker() {
 #[test]
 fn a_queued_command_wakes_a_parked_worker() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = spawn_hub_with_auto_open(&dir.path().to_string_lossy(), Vec::new(), Vec::new(), true);
+    let hub = raise_cap(spawn_hub_with_auto_open(
+        &dir.path().to_string_lossy(),
+        Vec::new(),
+        Vec::new(),
+        true,
+    ));
     let session = attach(&hub);
     wait_until_parked(&hub);
 
@@ -77,7 +97,12 @@ fn a_queued_command_wakes_a_parked_worker() {
 #[test]
 fn a_queued_close_wakes_a_parked_worker() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = spawn_hub_with_auto_open(&dir.path().to_string_lossy(), Vec::new(), Vec::new(), true);
+    let hub = raise_cap(spawn_hub_with_auto_open(
+        &dir.path().to_string_lossy(),
+        Vec::new(),
+        Vec::new(),
+        true,
+    ));
     let session = attach(&hub);
     let pane = open_pane(&session);
     wait_until_parked(&hub);
@@ -94,7 +119,12 @@ fn a_queued_close_wakes_a_parked_worker() {
 #[test]
 fn a_queued_resize_wakes_a_parked_worker() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = spawn_hub_with_auto_open(&dir.path().to_string_lossy(), Vec::new(), Vec::new(), true);
+    let hub = raise_cap(spawn_hub_with_auto_open(
+        &dir.path().to_string_lossy(),
+        Vec::new(),
+        Vec::new(),
+        true,
+    ));
     let session = attach(&hub);
     let pane = open_pane(&session);
     wait_until_parked(&hub);
@@ -115,7 +145,7 @@ fn a_queued_resize_wakes_a_parked_worker() {
 #[test]
 fn output_from_a_shell_wakes_a_parked_worker() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = fixture_hub(&dir.path().to_string_lossy(), ECHO_LINE);
+    let hub = raise_cap(fixture_hub(&dir.path().to_string_lossy(), ECHO_LINE));
     let (session, pane) = start_pane(&hub);
     // The child asks where the cursor is before it reads; a client answers, and
     // only then is the hub's worker left with nothing to do.

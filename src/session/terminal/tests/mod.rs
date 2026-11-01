@@ -66,13 +66,15 @@ pub(super) use waiting::{SHELL_TEST_DEADLINE, next_matching, wait_for};
 /// How long a test waits for a connection to reach a point a hook announces.
 pub(super) const HOOK_DEADLINE: Duration = Duration::from_secs(5);
 
-/// How long a hub may take to notice work once its worker is parked. Well under
-/// the one-second cap the worker otherwise waits on, so a missing signal cannot
-/// pass for promptness.
-pub(super) const PROMPT: Duration = Duration::from_millis(500);
+/// How long a hub may take to notice work once its worker is parked. The wake
+/// tests raise the worker's otherwise one-second cap far above this, so a missing
+/// signal is what fails their deadline rather than the cap.
+pub(super) const PROMPT: Duration = Duration::from_secs(3);
 
 /// Wait until the worker is parked on its wake signal: its pass count has stopped
-/// moving for longer than a pass takes.
+/// moving for longer than a pass takes, and no deadline is waiting to bring it
+/// back. A pending pace or drain deadline is not a signal, so a test that means to
+/// prove a producer woke the worker must not pass on one.
 pub(super) fn wait_until_parked(hub: &Arc<TerminalHub>) {
     let deadline = Instant::now() + SHELL_TEST_DEADLINE;
     let mut last = hub.worker_passes();
@@ -83,7 +85,9 @@ pub(super) fn wait_until_parked(hub: &Arc<TerminalHub>) {
         if passes != last {
             last = passes;
             quiet_since = Instant::now();
-        } else if quiet_since.elapsed() >= Duration::from_millis(50) {
+        } else if quiet_since.elapsed() >= Duration::from_millis(50)
+            && hub.worker_deadline().is_none()
+        {
             return;
         }
     }

@@ -117,6 +117,11 @@ pub struct PtyBackend {
     /// threads below can tell it an event is queued. `None` leaves the owner
     /// polling, which is what the attached TUI's backend does.
     waker: Option<WakeHandle>,
+    /// Whether the last drain spent a pane's budget with events still possibly
+    /// queued. The reader's wake for those was consumed by the pass that spent
+    /// the budget, so the owner has to be told to come back at once rather than
+    /// wait for another signal (see [`PtyBackend::next_deadline`]).
+    drain_backlog: bool,
 }
 
 impl PtyBackend {
@@ -129,6 +134,7 @@ impl PtyBackend {
             created: Vec::new(),
             shell,
             waker: None,
+            drain_backlog: false,
         }
     }
 
@@ -230,11 +236,14 @@ impl TerminalBackend for PtyBackend {
         //
         // Each pane is drained up to PER_PANE_DRAIN_BUDGET events so one noisy
         // pane (e.g. `yes | head -100000`) cannot starve its siblings within a
-        // frame; the rest lands on the next tick.
+        // frame. Spending the budget leaves events queued, and the reader's
+        // signal for them was consumed by the pass that got here, so the
+        // backend asks its owner back at once (see `next_deadline`).
         // Ahead of any output: a pane has to exist before bytes can be routed
         // to it, and both can be queued before the same drain.
         let mut events: Vec<BackendEvent> = std::mem::take(&mut self.created);
         let now = Instant::now();
+        let mut backlog = false;
         for (id, pane) in &mut self.panes {
             let mut budget = PER_PANE_DRAIN_BUDGET;
             while budget > 0 {
@@ -278,7 +287,13 @@ impl TerminalBackend for PtyBackend {
                 }
                 budget -= 1;
             }
+            // A budget of zero means the pane was never seen dry: whether the
+            // queue still holds something or not, the next pass has to look.
+            if budget == 0 {
+                backlog = true;
+            }
         }
+        self.drain_backlog = backlog;
         events
     }
 }

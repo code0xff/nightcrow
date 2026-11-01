@@ -30,13 +30,15 @@ pub struct Wake {
 impl Wake {
     /// Report that work is queued. Never blocks on a consumer that is already
     /// running; a consumer between passes keeps the flag for its next wait.
+    ///
+    /// Only the one consumer ever waits on a `Wake`, so notifying one is enough.
     pub fn wake(&self) {
         let mut pending = self
             .pending
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         *pending = true;
-        self.ready.notify_all();
+        self.ready.notify_one();
     }
 
     /// Wait until signalled, until `deadline`, or for at most `cap` — whichever

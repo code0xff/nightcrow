@@ -1,24 +1,32 @@
 //! Timed state the worker used to discover on a tick: the size-owner release
-//! grace, a synchronized update the program never closed, and the trailing
-//! snapshot an idle pane still owes.
+//! grace, a synchronized update the program never closed, the trailing snapshot
+//! an idle pane still owes, and a drain that stopped with events still queued.
 //!
 //! Each runs against a real child on a real PTY, because what is under test is
 //! the worker coming back *without* another byte arriving. The fixtures stay
-//! alive and silent after their paint so nothing but a clock can move them.
+//! alive and silent after their paint so nothing but a clock can move them; the
+//! burst leaves a queue already full, so nothing but the drain deadline can.
 
 use super::pty_fixture::{fixture_hub, read_through, start_pane};
 use super::{
     SHELL_TEST_DEADLINE, attach, created_pane, created_title, next_matching, spawn_hub,
     wait_until_parked,
 };
+use crate::backend::PaneId;
 use crate::session::size_owner::RELEASE_GRACE;
-use crate::session::terminal::frame::TerminalFrame;
+use crate::session::terminal::TerminalSession;
+use crate::session::terminal::frame::{ClientMessage, TerminalFrame};
 use std::thread;
 use std::time::{Duration, Instant};
 
 /// Past vte's 150 ms window for an open synchronized update, with room for a
 /// loaded machine to schedule the pass that ends it.
 const PAST_SYNC_WINDOW: Duration = Duration::from_millis(400);
+
+/// Far past any test's deadline: with the worker's cap out of reach, only the
+/// deadline a piece of timed state computes can end its wait, so a test of that
+/// deadline fails rather than passing on the cap.
+const HIGH_CAP: Duration = Duration::from_secs(30);
 
 /// `BSU`, then a title, then silence: the title is inside the update, so only the
 /// timeout can end the update and let the tracking emulator read it.
@@ -30,16 +38,17 @@ const HOLD_UPDATE: &str = concat!(
     "[Console]::Write($e+']0;held-title'+[char]7); Start-Sleep -Seconds 5"
 );
 
-/// Alternate-screen paint, a pause well inside the snapshot pace's window, one
-/// more write, then silence. The second write lands on top of the entry screen
-/// and stays owed until the window passes.
+/// Alternate-screen paint, then a wait for a line of input, then one more write,
+/// then silence. The gated tail lets the pass that stores the entry screen finish
+/// first, so the window the tail's snapshot waits out starts from that pass and the
+/// child itself produces nothing else.
 #[cfg(unix)]
-const PAINT_THEN_IDLE: &str =
-    "printf '\\033[?1049h\\033[2J\\033[1;1HHEADER'; sleep 0.1; printf '\\033[2;1HTAIL'; sleep 5";
+const PAINT_THEN_WAIT: &str =
+    "printf '\\033[?1049h\\033[2J\\033[1;1HHEADER'; read line; printf '\\033[2;1HTAIL'; sleep 5";
 #[cfg(windows)]
-const PAINT_THEN_IDLE: &str = concat!(
+const PAINT_THEN_WAIT: &str = concat!(
     "$e=[char]27; [Console]::Write($e+'[?1049h'+$e+'[2J'+$e+'[1;1HHEADER'); ",
-    "Start-Sleep -Milliseconds 100; ",
+    "[Console]::ReadLine() | Out-Null; ",
     "[Console]::Write($e+'[2;1HTAIL'); Start-Sleep -Seconds 5"
 );
 
@@ -55,10 +64,33 @@ fn owned_verdict(frame: &TerminalFrame) -> Option<bool> {
     value["owned"].as_bool()
 }
 
+/// A burst larger than the 256-event output queue, then a marker, then the end of
+/// the child. The reader is blocked on a full queue while the worker drains, so
+/// when it goes quiet the queue is still full and the events behind one pass's
+/// budget have no further signal to bring the worker back.
+#[cfg(unix)]
+const BURST_THEN_MARKER: &str =
+    "head -c 2097152 /dev/zero | tr '\\0' 'x'; printf 'nightcrow-burst-done'";
+#[cfg(windows)]
+const BURST_THEN_MARKER: &str = concat!(
+    "$out=[Console]::OpenStandardOutput(); ",
+    "$bytes=[Text.Encoding]::ASCII.GetBytes(('x' * 2097152)); ",
+    "$out.Write($bytes,0,$bytes.Length); $out.Flush(); ",
+    "$marker=[Text.Encoding]::ASCII.GetBytes('nightcrow-burst-done'); ",
+    "$out.Write($marker,0,$marker.Length); $out.Flush()"
+);
+
+const BURST_MARKER: &[u8] = b"nightcrow-burst-done";
+
+/// How long the burst may take to reach the client. Far under the 30 s cap the
+/// test puts in the way, so the cap cannot hide a wait that should not happen.
+const BURST_DEADLINE: Duration = Duration::from_secs(10);
+
 #[test]
 fn the_size_owner_grace_ends_on_the_worker_clock() {
     let dir = tempfile::TempDir::new().unwrap();
     let hub = spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
+    hub.set_wait_cap(HIGH_CAP);
     let owner = attach(&hub);
     let heir = attach(&hub);
     let passive = next_matching(&heir, |f| owned_verdict(f).is_some()).expect("no verdict");
@@ -111,13 +143,37 @@ fn an_open_synchronized_update_is_read_once_its_timeout_passes() {
 #[test]
 fn an_idle_pane_owing_bytes_gets_its_trailing_snapshot() {
     let dir = tempfile::TempDir::new().unwrap();
-    let hub = fixture_hub(&dir.path().to_string_lossy(), PAINT_THEN_IDLE);
+    let hub = fixture_hub(&dir.path().to_string_lossy(), PAINT_THEN_WAIT);
+    hub.set_wait_cap(HIGH_CAP);
     let (session, pane) = start_pane(&hub);
 
-    read_through(&session, pane, b"TAIL");
+    // The entry paint, and then the child waits on its input. Wait until the pane's
+    // screen is stored: the snapshot window the tail waits out starts from that
+    // pass, so the tail lands well inside it rather than on a screen taken with it.
+    read_through(&session, pane, b"HEADER");
+    let deadline = Instant::now() + SHELL_TEST_DEADLINE;
+    let mut stored = false;
+    while Instant::now() < deadline {
+        let (screen, since) = hub.pane_record(pane).expect("the pane is live");
+        if screen > 0 && since == 0 {
+            stored = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        stored,
+        "the entry screen never reached a stored snapshot: a paced pass never came \
+         back for it"
+    );
 
-    // The child is quiet from here on: the entry screen was stored before this
-    // write, so only the paced pass can fold it in.
+    // The tail lands on top of that screen and the child is silent again: only a
+    // paced pass can fold it in.
+    session.dispatch(ClientMessage::Input {
+        pane,
+        data: "go\r".to_string(),
+    });
+
     let mut owed_seen = false;
     let deadline = Instant::now() + SHELL_TEST_DEADLINE;
     while Instant::now() < deadline {
@@ -137,4 +193,70 @@ fn an_idle_pane_owing_bytes_gets_its_trailing_snapshot() {
     assert_eq!(since, 0, "the owed tail was never folded into a snapshot");
     assert!(screen > 0, "the record must carry a screen");
     hub.stop();
+}
+
+#[test]
+fn a_drain_left_over_at_its_budget_does_not_wait_for_a_signal() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = fixture_hub(&dir.path().to_string_lossy(), BURST_THEN_MARKER);
+    // The events a pass leaves queued have no producer left to signal for them,
+    // so a cap the test could sit out would hide the missing drain deadline.
+    hub.set_wait_cap(HIGH_CAP);
+    let (session, pane) = start_pane(&hub);
+
+    let took = read_burst(&session, pane);
+    assert!(
+        took < BURST_DEADLINE,
+        "the burst's tail took {took:?} to reach the client: the drain waited out \
+         the {HIGH_CAP:?} cap instead of coming back for the events it left queued"
+    );
+    hub.stop();
+}
+
+/// Read `session` until the burst's marker arrives, keeping only a short tail and
+/// answering the cursor queries a PowerShell child waits on: a multi-megabyte
+/// burst must not be rescanned on every frame. Returns when the deadline passes
+/// without the marker, so the caller owns the verdict.
+fn read_burst(session: &TerminalSession, pane: PaneId) -> Duration {
+    let started = Instant::now();
+    let mut tail: Vec<u8> = Vec::new();
+    let mut answered = 0;
+    while started.elapsed() < BURST_DEADLINE {
+        let Some(frame) = session.next_frame(Duration::from_millis(100)) else {
+            continue;
+        };
+        let TerminalFrame::Output {
+            pane: event_pane,
+            data,
+        } = frame
+        else {
+            continue;
+        };
+        if event_pane != pane {
+            continue;
+        }
+        let asked = data
+            .windows(4)
+            .filter(|window| *window == b"\x1b[6n")
+            .count();
+        while answered < asked {
+            session.dispatch(ClientMessage::Input {
+                pane,
+                data: "\x1b[1;1R".to_string(),
+            });
+            answered += 1;
+        }
+        tail.extend_from_slice(&data);
+        if tail.len() > BURST_MARKER.len() * 2 {
+            let excess = tail.len() - BURST_MARKER.len() * 2;
+            tail.drain(..excess);
+        }
+        if tail
+            .windows(BURST_MARKER.len())
+            .any(|window| window == BURST_MARKER)
+        {
+            return started.elapsed();
+        }
+    }
+    started.elapsed()
 }

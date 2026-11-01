@@ -226,23 +226,32 @@ impl TerminalHub {
             self.settle_size_owner(Instant::now());
             // A pass that left work undone — a command a full queue refused, a
             // plugin that filled its per-tick budget — has already been signalled
-            // by whoever produced it, so the flag is what makes that pass follow
-            // this one. Everything else is on a clock, and `next_deadline` names
-            // the earliest of them.
+            // by whoever produced it, so the pending flag is what makes that pass
+            // follow this one. A PTY burst larger than one pass's drain budget is
+            // the exception: the reader's signal for the leftover was consumed by
+            // the pass that spent the budget, so the backend names the backlog as a
+            // deadline due immediately. Everything else is on a clock, and
+            // `next_deadline` names the earliest of them.
             #[cfg(test)]
             let legacy_polling = self.probe.legacy_polling.load(Ordering::Acquire);
             #[cfg(not(test))]
             let legacy_polling = false;
+            #[cfg(test)]
+            let idle_cap = self.wait_cap().unwrap_or(IDLE_WAIT_CAP);
+            #[cfg(not(test))]
+            let idle_cap = IDLE_WAIT_CAP;
             let cap = if legacy_polling {
                 POLL_INTERVAL
             } else {
-                IDLE_WAIT_CAP
+                idle_cap
             };
             let deadline = if legacy_polling {
                 None
             } else {
                 self.next_deadline(&backend, &modes, &plugins, Instant::now())
             };
+            #[cfg(test)]
+            self.record_worker_deadline(deadline);
             self.wake.wait(deadline, cap);
         }
 

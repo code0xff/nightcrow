@@ -7,8 +7,9 @@
 use super::frame::TerminalFrame;
 use super::{ConcurrencyTestPoint, TerminalHub, hub_helpers};
 use crate::backend::PaneId;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// What a test can observe about the worker without reaching into its loop.
 #[derive(Default)]
@@ -21,6 +22,13 @@ pub(super) struct WorkerProbe {
     /// Reproduce the fixed tick the worker used before it could be woken, for
     /// the measurement that compares the two.
     pub(super) legacy_polling: AtomicBool,
+    /// Replaces the idle wait cap. `None` keeps the production one, so a test can
+    /// make the computed deadline the only thing that can end a wait.
+    pub(super) wait_cap: Mutex<Option<Duration>>,
+    /// The deadline the worker computed at the end of its last pass. A test that
+    /// means to prove a signal woke the worker also requires this to be `None`,
+    /// so a pending pace or drain deadline cannot pass for one.
+    pub(super) deadline: Mutex<Option<Instant>>,
 }
 
 impl TerminalHub {
@@ -40,6 +48,42 @@ impl TerminalHub {
     /// often an idle hub wakes with and without it.
     pub(super) fn set_legacy_polling(&self, on: bool) {
         self.probe.legacy_polling.store(on, Ordering::Release);
+    }
+
+    /// Replace the idle wait cap, so a test can leave a missing signal with no
+    /// rescue but its own deadline.
+    pub(super) fn set_wait_cap(&self, cap: Duration) {
+        *self
+            .probe
+            .wait_cap
+            .lock()
+            .expect("terminal wait cap poisoned") = Some(cap);
+    }
+
+    /// The cap the worker's next wait will use, or `None` for production's.
+    pub(super) fn wait_cap(&self) -> Option<Duration> {
+        *self
+            .probe
+            .wait_cap
+            .lock()
+            .expect("terminal wait cap poisoned")
+    }
+
+    /// The deadline the worker computed at the end of its last pass.
+    pub(crate) fn worker_deadline(&self) -> Option<Instant> {
+        *self
+            .probe
+            .deadline
+            .lock()
+            .expect("terminal deadline poisoned")
+    }
+
+    pub(super) fn record_worker_deadline(&self, deadline: Option<Instant>) {
+        *self
+            .probe
+            .deadline
+            .lock()
+            .expect("terminal deadline poisoned") = deadline;
     }
 
     /// The stored screen and the bytes owed on top of it, for a live pane. What
