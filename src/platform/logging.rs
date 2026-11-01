@@ -65,6 +65,8 @@ pub fn init_logging(config: &LogConfig, repo_path: &str) -> Option<LogGuard> {
                     log_dir.display()
                 );
                 let appender = tracing_appender::rolling::daily(&log_dir, LOG_FILE_PREFIX);
+                let appender =
+                    TimeRotationCleanup::new(appender, &log_dir, config.max_days, 86_400);
                 tracing_appender::non_blocking(appender)
             }
         }
