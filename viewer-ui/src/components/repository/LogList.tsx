@@ -2,6 +2,11 @@ import { SkeletonBar } from "../feedback/Skeleton";
 import { PathLabel } from "../content/PathLabel";
 import { formatRelativeTime, statusColor } from "../../lib/shared/utils";
 import { refClass, refText } from "../../lib/repository/gitState";
+import {
+  VIRTUAL_THRESHOLD,
+  virtualWindow,
+  type ScrollViewport,
+} from "../../lib/ui/virtualWindow";
 import type { Commit } from "../../api";
 import type { CommitDrillDown } from "../../hooks/git/useLog";
 import type { Decorations } from "../../hooks/git/useLogDecorations";
@@ -15,6 +20,9 @@ export interface LogListProps {
   logDone: boolean;
   logStalled: boolean;
   logPagingPaused: boolean;
+  /** The sidebar list's scroll position, so a long history renders only the
+   *  rows near it (`lib/ui/virtualWindow.ts`). */
+  viewport: ScrollViewport;
   setLogStalled: (v: boolean | ((prev: boolean) => boolean)) => void;
   logSentinelRef: React.RefObject<HTMLLIElement | null>;
   openCommitFiles: (commit: Commit) => void;
@@ -34,6 +42,7 @@ export function LogList({
   logDone,
   logStalled,
   logPagingPaused,
+  viewport,
   setLogStalled,
   logSentinelRef,
   openCommitFiles,
@@ -43,13 +52,48 @@ export function LogList({
   setPaneEmpty,
   bumpPaneRequest,
 }: LogListProps) {
+  // The history (or a commit's file list) can be thousands of rows; keep only
+  // the viewport and its overscan in the DOM, as the diff faces do. The
+  // notices and the paging sentinel stay outside the window: they belong at
+  // the true end of the list.
+  const commitRange =
+    !commitDrillDown && visibleCommits.length > VIRTUAL_THRESHOLD
+      ? virtualWindow(visibleCommits.length, viewport.scrollTop, viewport.height)
+      : null;
+  const shownCommits = commitRange
+    ? visibleCommits.slice(commitRange.start, commitRange.end)
+    : visibleCommits;
+  const firstCommit = commitRange?.start ?? 0;
+  const fileRange =
+    commitDrillDown && visibleCommitFiles.length > VIRTUAL_THRESHOLD
+      ? virtualWindow(
+          visibleCommitFiles.length,
+          viewport.scrollTop,
+          viewport.height,
+        )
+      : null;
+  const shownFiles = fileRange
+    ? visibleCommitFiles.slice(fileRange.start, fileRange.end)
+    : visibleCommitFiles;
+  const firstFile = fileRange?.start ?? 0;
   return (
     <>
+      {!commitDrillDown && commitRange && (
+        <li
+          aria-hidden="true"
+          data-virtual-count={visibleCommits.length}
+          style={{ height: commitRange.before }}
+        />
+      )}
       {!commitDrillDown &&
-        visibleCommits.map((c) => {
+        shownCommits.map((c, offset) => {
+          const index = firstCommit + offset;
           const divergence = decorations.divergenceOf(c.oid);
           return (
-            <li key={c.oid}>
+            <li
+              key={c.oid}
+              data-virtual-row={commitRange ? index : undefined}
+            >
               <button
                 onClick={() => void openCommitFiles(c)}
                 title={`${c.author} · ${c.summary}`}
@@ -100,6 +144,9 @@ export function LogList({
             </li>
           );
         })}
+      {!commitDrillDown && commitRange && (
+        <li aria-hidden="true" style={{ height: commitRange.after }} />
+      )}
       {!commitDrillDown && decorations.truncated && (
         // Last in the list rather than first: it qualifies the marks above
         // without pushing the history down.
@@ -161,19 +208,32 @@ export function LogList({
               all changes
             </button>
           </li>
-          {visibleCommitFiles.map((f) => (
-            <li key={f.path}>
-              <button
-                onClick={() =>
-                  openCommitFileDiff(commitDrillDown.commit.oid, f.path)
-                }
-                className="flex w-max min-w-full gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
-              >
-                <span className={statusColor(f.index)}>{f.index}</span>
-                <PathLabel path={f.path} from={f.old_path} />
-              </button>
-            </li>
-          ))}
+          {fileRange && (
+            <li
+              aria-hidden="true"
+              data-virtual-count={visibleCommitFiles.length}
+              style={{ height: fileRange.before }}
+            />
+          )}
+          {shownFiles.map((f, offset) => {
+            const index = firstFile + offset;
+            return (
+              <li key={f.path} data-virtual-row={fileRange ? index : undefined}>
+                <button
+                  onClick={() =>
+                    openCommitFileDiff(commitDrillDown.commit.oid, f.path)
+                  }
+                  className="flex w-max min-w-full gap-2 px-3 py-0.5 text-left hover:bg-ink-850"
+                >
+                  <span className={statusColor(f.index)}>{f.index}</span>
+                  <PathLabel path={f.path} from={f.old_path} />
+                </button>
+              </li>
+            );
+          })}
+          {fileRange && (
+            <li aria-hidden="true" style={{ height: fileRange.after }} />
+          )}
           {commitDrillDown.files.length === 0 && (
             <li className="px-3 py-2 text-ink-400">No changed files.</li>
           )}

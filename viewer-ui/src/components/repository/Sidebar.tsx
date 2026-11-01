@@ -255,6 +255,7 @@ export function Sidebar(props: SidebarProps) {
             logDone={logDone}
             logStalled={logStalled}
             logPagingPaused={logPagingPaused}
+            viewport={viewport}
             setLogStalled={setLogStalled}
             logSentinelRef={logSentinelRef}
             openCommitFiles={openCommitFiles}
