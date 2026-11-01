@@ -5,9 +5,10 @@
 //! [`desk`](super::snapshot_desk); the pace's own edges in
 //! [`pace`](super::snapshot_pace).
 
-use super::snapshot_desk::{Desk, ENTER, assert_replay_matches_live, frame};
+use super::snapshot_desk::{COLS, Desk, ENTER, PANE, ROWS, assert_replay_matches_live, frame};
 use crate::session::limits::MAX_TERMINAL_SCROLLBACK_BYTES;
-use std::time::Duration;
+use crate::session::terminal::hub_modes::PaneModeTracker;
+use std::time::{Duration, Instant};
 
 /// The window is wider than a repaint: a program that redraws several times per
 /// tick costs one serialization per window instead of one per clean boundary, and
@@ -132,4 +133,25 @@ fn a_crowded_snapshot_is_not_taken_again_in_the_same_tick() {
     );
     assert_replay_matches_live(&desk);
     desk.hub.stop();
+}
+
+/// The chunk that takes the alternate screen carries its own screen. The
+/// end-of-tick pass must not serialize that grid a second time.
+#[test]
+fn an_entry_chunk_screen_is_not_taken_again_at_the_end_of_its_tick() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = super::spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
+    hub.register_pane(PANE, ROWS, COLS, None, None);
+    let now = Instant::now();
+    let mut tracker = PaneModeTracker::default();
+
+    assert!(
+        !hub.record_pane_output(PANE, ENTER.to_vec(), &mut tracker, now),
+        "a chunk that takes its own entry screen is not left restless"
+    );
+    assert!(
+        tracker.settle_restless(&[PANE], now).is_empty(),
+        "and the paced pass must not serialize that grid again"
+    );
+    hub.stop();
 }

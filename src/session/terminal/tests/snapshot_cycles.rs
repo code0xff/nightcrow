@@ -8,9 +8,11 @@
 //! only safe if exactly these paths still rebuild the live screen.
 
 use super::snapshot_desk::{
-    Desk, ENTER, assert_replay_matches_live, assert_replay_settles_to_live, frame, replay_stream,
+    COLS, Desk, ENTER, PANE, ROWS, assert_replay_matches_live, assert_replay_settles_to_live,
+    frame, replay_stream,
 };
 use crate::session::limits::MAX_TERMINAL_SCROLLBACK_BYTES;
+use crate::session::terminal::hub_modes::PaneModeTracker;
 use std::time::{Duration, Instant};
 
 /// Past the 150 ms window the emulator arms on a synchronized update opening, so a
@@ -55,6 +57,38 @@ fn a_pane_that_leaves_and_returns_to_the_alternate_screen_still_replays_exactly(
     desk.tick();
     assert_replay_matches_live(&desk);
     desk.hub.stop();
+}
+
+/// Bytes owed on the alternate screen belong to that record. Once the program
+/// leaves it, the pass must not take the normal grid as if it were the owed
+/// alternate screen, however long the old window had left to run.
+#[test]
+fn leaving_the_alternate_screen_drops_the_bytes_owed_on_it() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let hub = super::spawn_hub(&dir.path().to_string_lossy(), Vec::new(), Vec::new());
+    hub.register_pane(PANE, ROWS, COLS, None, None);
+    let now = Instant::now();
+    let mut tracker = PaneModeTracker::default();
+
+    assert!(
+        !hub.record_pane_output(PANE, ENTER.to_vec(), &mut tracker, now),
+        "the entry chunk takes its own screen"
+    );
+    assert!(
+        hub.record_pane_output(PANE, b"\x1b[2;1Hmore".to_vec(), &mut tracker, now),
+        "painting on top of it leaves bytes owed"
+    );
+    assert!(
+        !hub.record_pane_output(PANE, b"\x1b[?1049lback".to_vec(), &mut tracker, now),
+        "the leave chunk is recorded against the normal screen"
+    );
+    assert!(
+        tracker
+            .settle_restless(&[], now + Duration::from_millis(250))
+            .is_empty(),
+        "and nothing owed on the alternate screen survives the switch"
+    );
+    hub.stop();
 }
 
 /// A program killed inside a synchronized update that was carrying the switch to

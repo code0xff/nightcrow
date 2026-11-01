@@ -168,6 +168,29 @@ fn one_panes_window_does_not_hold_up_another() {
     assert_eq!(screens[0].0, other);
 }
 
+/// A pane the tick does not name still gets its owed screen once its window
+/// passes: an idle pane is not restless, but it is still owed.
+#[test]
+fn an_idle_pane_that_owes_bytes_is_settled_without_being_restless() {
+    let now = Instant::now();
+    let mut tracker = snapshotted_pane(now);
+
+    tracker.note_owed(PANE, 16);
+    assert!(
+        tracker.settle_restless(&[], now + WINDOW - TICK).is_empty(),
+        "an owed pane waits out its window even when the tick names nobody"
+    );
+    assert_eq!(
+        tracker.settle_restless(&[], now + WINDOW).len(),
+        1,
+        "and the pass takes it once the window has passed"
+    );
+    assert!(
+        tracker.settle_restless(&[], now + 2 * WINDOW).is_empty(),
+        "after which it owes nothing and must not be taken again"
+    );
+}
+
 /// The verdict the worker's loop acts on: an alternate-screen pane is left for the
 /// paced pass until a chunk takes its own screen, and a normal-screen pane never is.
 #[test]
