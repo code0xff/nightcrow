@@ -1,11 +1,11 @@
-//! What a replay must reproduce when a pane's mode changes while its screen is
-//! being paced: leaving and re-entering the alternate screen, and a chunk that
-//! splits a sequence across ticks.
+//! What a replay must reproduce when the record the hub keeps is not one continuous
+//! stream: a pane leaving and re-entering the alternate screen, a chunk that splits a
+//! sequence across ticks, a normal-screen record whose tail outgrows its ring, a switch
+//! the clock applies instead of a byte, and a randomised stream of every such shape.
 //!
-//! Both are the places where the record the hub keeps is not one continuous
-//! stream — the alternate screen becomes a snapshot plus a tail, and the tail may
-//! be replayed raw — so the pace lengthening that tail is only safe if exactly
-//! these paths still rebuild the live screen.
+//! Each is a place where the alternate record becomes a snapshot plus a tail, or where
+//! the normal record stops being the whole ring — so the pace lengthening that tail is
+//! only safe if exactly these paths still rebuild the live screen.
 
 use super::snapshot_desk::{
     Desk, ENTER, assert_replay_matches_live, assert_replay_settles_to_live, frame, replay_stream,
