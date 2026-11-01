@@ -3,6 +3,7 @@ mod draw_backend;
 mod enter_fullscreen;
 #[path = "../event_loop_tests.rs"]
 mod event_loop;
+mod event_loop_visibility;
 mod helpers;
 mod mouse;
 mod mouse_clicks;

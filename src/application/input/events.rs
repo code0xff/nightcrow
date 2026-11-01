@@ -1,5 +1,5 @@
 use crate::application::input::dispatch::{KeyOutcome, dispatch_key};
-use crate::application::input::mouse::dispatch_mouse;
+use crate::application::input::mouse::{dispatch_mouse, mouse_kind_acts};
 use crate::application::input::paste::dispatch_paste;
 use crate::application::redraw::{RedrawCause, RedrawState};
 use crate::config::Config;
@@ -37,6 +37,9 @@ where
             None
         }
         Event::Mouse(mouse) => {
+            if !mouse_kind_acts(mouse.kind) {
+                return Ok(Some(KeyOutcome::Continue));
+            }
             redraw.request(RedrawCause::Input);
             let size = terminal.size()?;
             let screen = Rect::new(0, 0, size.width, size.height);

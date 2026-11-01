@@ -81,11 +81,15 @@ impl TerminalState {
         );
     }
 
-    pub(super) fn confirm_resize(&mut self, pane: PaneId, rows: u16, cols: u16) {
+    /// Apply the size the session reports for `pane`. Reports whether the
+    /// emulator changed geometry, so a repeated confirmation does not count
+    /// as a visible change.
+    pub(super) fn confirm_resize(&mut self, pane: PaneId, rows: u16, cols: u16) -> bool {
         let Some(emulator) = self.emulators.get_mut(&pane) else {
-            return;
+            return false;
         };
         let size = crate::runtime::emulator::effective_size(rows, cols);
+        let changed = self.confirmed_content_size.get(&pane) != Some(&size);
         emulator.resize(size.0, size.1);
         self.confirmed_content_size.insert(pane, size);
         // A matching ACK completes the request; an older ACK also clears it so
@@ -94,5 +98,6 @@ impl TerminalState {
         if !self.owns_size {
             self.last_content_size.insert(pane, size);
         }
+        changed
     }
 }

@@ -190,3 +190,56 @@ fn mouse_hit_testing_uses_the_post_resize_terminal_size() {
         Some(target)
     );
 }
+
+#[test]
+fn pointer_motion_without_a_click_requests_no_frame() {
+    let mut app = crate::app::tests::app_with_fake_backend();
+    app.terminal.create_pane_now().unwrap();
+    app.poll_terminal();
+    let mut workspace = Workspace::new(leader_key());
+    workspace.add(app);
+    let cfg = Config::default();
+    let terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    let mut redraw = RedrawState::new();
+    let now = Instant::now();
+
+    for kind in [
+        MouseEventKind::Moved,
+        MouseEventKind::Drag(MouseButton::Left),
+    ] {
+        redraw.take();
+        let outcome = dispatch_input_event(
+            &terminal,
+            &mut workspace,
+            &cfg,
+            Event::Mouse(MouseEvent {
+                kind,
+                column: 3,
+                row: 3,
+                modifiers: KeyModifiers::NONE,
+            }),
+            &mut redraw,
+            now,
+        )
+        .unwrap();
+        assert!(matches!(outcome, Some(KeyOutcome::Continue)));
+        assert!(!redraw.take(), "{kind:?} must not request a frame");
+    }
+
+    redraw.take();
+    dispatch_input_event(
+        &terminal,
+        &mut workspace,
+        &cfg,
+        Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 3,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        }),
+        &mut redraw,
+        now,
+    )
+    .unwrap();
+    assert!(redraw.take(), "a press still requests a frame");
+}
