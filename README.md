@@ -4,6 +4,8 @@ Agent-adjacent terminal workbench: inspect Git changes while running several ter
 
 nightcrow is a single Rust binary for macOS, Linux, and Windows.
 
+On Windows, nightcrow has been tested in the default terminal with PowerShell. Errors that make nightcrow difficult to use have been reported in the Termius Windows app; compatibility with other terminal apps may vary. Use the tested environment if you encounter problems.
+
 ## Quick start
 
 ### 1. Install
@@ -25,7 +27,7 @@ Rust 1.89 or newer is required. To create an editable starter configuration firs
 nightcrow attach
 ```
 
-`attach` starts a background session when none is running, then opens the TUI. If a session already exists it attaches to that session instead of starting another one. The session prints its browser URL and the path used by later `nightcrow attach` commands. The web viewer uses a generated password on first start and prints it once; see [Web viewer](docs/web-viewer.md#access-and-security).
+`attach` starts a background session when none is running, then opens the TUI. If a session already exists it attaches to that session instead of starting another one. The session prints its browser URL and the path used by later `nightcrow attach` commands. If no web-viewer password is configured, the session generates one and prints it once; see [Web viewer](docs/web-viewer.md#access-and-security).
 
 With the default leader (`Ctrl+F`), press the leader and then:
 

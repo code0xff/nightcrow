@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useState } from "react";
 import { api } from "../../api";
+import { readPreference, writePreference } from "../../lib/ui/preferenceStorage";
 
 /** Keep accent presets in the TUI's cycle order. */
 export const ACCENTS = [
@@ -20,19 +21,12 @@ function normalize(index: number): number {
 }
 
 function loadIndex(): number {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw === null ? 0 : normalize(Number(raw));
-  } catch {
-    return 0;
-  }
+  const raw = readPreference(STORAGE_KEY);
+  return raw === null ? 0 : normalize(Number(raw));
 }
 
 function storeIndex(index: number) {
-  try {
-    localStorage.setItem(STORAGE_KEY, String(index));
-  } catch {
-  }
+  writePreference(STORAGE_KEY, String(index));
 }
 
 export function useAccent() {
