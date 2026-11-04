@@ -86,7 +86,7 @@ npm --prefix viewer-ui test
 npm --prefix viewer-ui run build
 ```
 
-`lint`, `test`, and `build` refuse to run when `node_modules` no longer matches `package-lock.json` ? after a pull that bumped a dependency, say ? and name the packages that differ; `npm --prefix viewer-ui ci` brings it back. A stale install still resolves, so without the check they would pass against versions the project does not use.
+`lint`, `test`, and `build` refuse to run when `node_modules` no longer matches `package-lock.json` (for example, after a pull that bumped a dependency) and name the packages that differ. Run `npm --prefix viewer-ui ci` to restore the locked dependencies. Without the check, commands could pass against package versions the project does not use.
 
 The bundle in `viewer-ui/dist/` is committed. A viewer change is complete only when the build succeeds and the generated `dist` diff is included when it changes. On Windows, the local Unix gate is recommended before pushing changes to `cfg(unix)` or platform-specific code such as PTY, signal, and file-permission handling:
 
@@ -104,7 +104,7 @@ Run the browser screenshots in Docker on Windows, macOS, and Linux so every plat
 npm --prefix viewer-ui run test:visual
 ```
 
-The runner builds the Vite bundle, starts strict-port preview on `4173`, and runs Chromium from the pinned Playwright `1.64.1` image with Node.js `26`. It gives the container a separate Linux `node_modules` volume and does not install another browser. Docker Desktop or Docker Engine must be running.
+The runner builds the Vite bundle, starts strict-port preview on `4173`, and runs Chromium from the pinned Playwright image with Node.js `26`. It gives the container a separate Linux `node_modules` volume and does not install another browser. Docker Desktop or Docker Engine must be running.
 
 Linux baselines live in `viewer-ui/visual/snapshots/linux/`. After intentionally changing a screenshot, regenerate them through the same container:
 

@@ -33,7 +33,7 @@ A pass ends by asking every owner of timed state for its next deadline, then wai
 
 ## Shared state
 
-The session shares repository membership/order, active repository, pane set/content/order/title/confirmed size, and accent. Cursor, scroll, focus, fullscreen, search, and the TUI `Workspace` view state are client-local. The viewer shares only sidebar width, `upper_pct`, and per-project last view/maximize in `viewer.json` between browsers; these are separate from the TUI workspace file.
+The session shares repository membership/order, active repository, pane set/content/order/title/confirmed size, and accent. Cursor, scroll, focus, fullscreen, search, and the TUI `Workspace` view state are client-local. The viewer stores `upper_pct` and per-project last view/maximize in `viewer.json`, alongside the shared session accent. Browser-local settings such as sidebar width, tab placement, pane view mode, key bar, shortcut leader, and display scale stay in each browser's `localStorage`; viewer preferences remain separate from the TUI workspace file.
 
 ### Catalog transaction
 

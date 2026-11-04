@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { readPreference, writePreference } from "../../lib/ui/preferenceStorage";
 
 const STORAGE_KEY = "nightcrow.viewer.scale";
 export const SCREEN_SCALES = [50, 60, 70, 80, 90, 100, 110, 120, 130] as const;
@@ -30,11 +31,7 @@ export function ScreenScaleProvider({ children }: { children: ReactNode }) {
   const setScale = useCallback((next: ScreenScale) => {
     const normalized = normalizeScreenScale(next);
     setCurrentScale(normalized);
-    try {
-      localStorage.setItem(STORAGE_KEY, String(normalized));
-    } catch {
-      // The setting still applies to this page when storage is unavailable.
-    }
+    writePreference(STORAGE_KEY, String(normalized));
   }, []);
 
   return (
@@ -49,12 +46,8 @@ export function useScreenScale(): ScreenScaleContextValue {
 }
 
 export function readScreenScale(): ScreenScale {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw !== null) return normalizeScreenScale(Number(raw));
-  } catch {
-    // Storage is a preference, not a requirement for opening the viewer.
-  }
+  const raw = readPreference(STORAGE_KEY);
+  if (raw !== null) return normalizeScreenScale(Number(raw));
   return 100;
 }
 

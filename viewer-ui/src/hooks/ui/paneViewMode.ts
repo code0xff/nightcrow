@@ -10,22 +10,16 @@ import {
   resolvePaneViewMode,
   type PaneViewMode,
 } from "../../lib/terminal/paneViewMode";
+import { readPreference, writePreference } from "../../lib/ui/preferenceStorage";
 
 const STORAGE_KEY = "nightcrow.paneViewMode";
 
 function load(): PaneViewMode | null {
-  try {
-    return parsePaneViewMode(localStorage.getItem(STORAGE_KEY));
-  } catch {
-    return null;
-  }
+  return parsePaneViewMode(readPreference(STORAGE_KEY));
 }
 
 function store(mode: PaneViewMode) {
-  try {
-    localStorage.setItem(STORAGE_KEY, mode);
-  } catch {
-  }
+  writePreference(STORAGE_KEY, mode);
 }
 
 function viewportWidth(): number {

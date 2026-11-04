@@ -9,24 +9,17 @@ import {
   parseKeyBarPref,
   type KeyBarPref,
 } from "../../lib/terminal/termKeys";
+import { readPreference, writePreference } from "../../lib/ui/preferenceStorage";
 
 const STORAGE_KEY = "nightcrow.termKeyBar";
 const COARSE_QUERY = "(pointer: coarse)";
 
 function load(): KeyBarPref | null {
-  try {
-    return parseKeyBarPref(localStorage.getItem(STORAGE_KEY));
-  } catch {
-    return null;
-  }
+  return parseKeyBarPref(readPreference(STORAGE_KEY));
 }
 
 function store(pref: KeyBarPref) {
-  try {
-    localStorage.setItem(STORAGE_KEY, pref);
-  } catch {
-    // A browser that refuses storage still gets the toggle, just not the memory.
-  }
+  writePreference(STORAGE_KEY, pref);
 }
 
 function coarseNow(): boolean {

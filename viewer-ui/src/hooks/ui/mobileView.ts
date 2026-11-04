@@ -3,6 +3,7 @@
 
 import { useCallback, useState } from "react";
 import type { MobileView } from "../../types";
+import { readPreference, writePreference } from "../../lib/ui/preferenceStorage";
 
 const STORAGE_KEY = "nightcrow.mobileView";
 
@@ -11,21 +12,13 @@ function parse(raw: string | null): MobileView {
 }
 
 function load(): MobileView {
-  try {
-    return parse(localStorage.getItem(STORAGE_KEY));
-  } catch {
-    return "files";
-  }
+  return parse(readPreference(STORAGE_KEY));
 }
 
 export function useMobileView() {
   const [mobileView, setView] = useState<MobileView>(load);
   const setMobileView = useCallback((view: MobileView) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, view);
-    } catch {
-      // Storage is optional; navigation remains usable for this page lifetime.
-    }
+    writePreference(STORAGE_KEY, view);
     setView(view);
   }, []);
 
