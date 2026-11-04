@@ -7,6 +7,7 @@
 // means the same thing at any width.
 
 import { useCallback, useState } from "react";
+import { readPreference, writePreference } from "../../lib/ui/preferenceStorage";
 
 const STORAGE_KEY = "nightcrow.sidebarWidth";
 
@@ -38,21 +39,14 @@ export function clampSidebarDragWidth(px: number): number {
 }
 
 function loadWidth(): number {
-  try {
-    const raw = Number(localStorage.getItem(STORAGE_KEY));
-    return Number.isFinite(raw) && raw > 0
-      ? clampSidebarWidth(raw)
-      : DEFAULT_SIDEBAR_WIDTH;
-  } catch {
-    return DEFAULT_SIDEBAR_WIDTH;
-  }
+  const raw = Number(readPreference(STORAGE_KEY));
+  return Number.isFinite(raw) && raw > 0
+    ? clampSidebarWidth(raw)
+    : DEFAULT_SIDEBAR_WIDTH;
 }
 
 function storeWidth(px: number) {
-  try {
-    localStorage.setItem(STORAGE_KEY, String(px));
-  } catch {
-  }
+  writePreference(STORAGE_KEY, String(px));
 }
 
 /**

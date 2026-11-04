@@ -11,22 +11,16 @@ import {
   parseTabStripSide,
   type TabStripSide,
 } from "../../lib/ui/tabStripSide";
+import { readPreference, writePreference } from "../../lib/ui/preferenceStorage";
 
 const STORAGE_KEY = "nightcrow.tabStripSide";
 
 function load(): TabStripSide {
-  try {
-    return parseTabStripSide(localStorage.getItem(STORAGE_KEY)) ?? "top";
-  } catch {
-    return "top";
-  }
+  return parseTabStripSide(readPreference(STORAGE_KEY)) ?? "top";
 }
 
 function store(side: TabStripSide) {
-  try {
-    localStorage.setItem(STORAGE_KEY, side);
-  } catch {
-  }
+  writePreference(STORAGE_KEY, side);
 }
 
 export interface TabStrip {
