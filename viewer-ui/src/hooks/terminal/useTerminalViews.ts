@@ -20,6 +20,7 @@ import type { ScreenScale } from "../ui/screenScale";
 import { createTitleThrottle } from "../../lib/terminal/titleThrottle";
 import type { TitleThrottle } from "../../lib/terminal/titleThrottle";
 import { enableWebglRenderer } from "../../lib/terminal/webglRenderer";
+import { installImeInputGuard, type ImeInputGuard } from "../../lib/terminal/imeInputGuard";
 import {
   queueTerminalBarrier,
   resetTerminalWrites,
@@ -95,6 +96,9 @@ export function useTerminalViews({
         ...font,
         theme: { background: "#111112", foreground: "#f2f2f3" },
         cursorBlink: true,
+        // The IME guard follows xterm's early finalize path, which is skipped
+        // when Option is treated as Meta.
+        macOptionIsMeta: false,
         // Without this there is no way to select text on a Mac in a pane whose
         // program reads the mouse — which is most of what this panel is opened
         // for. xterm offers one way back: a modifier that forces the drag to be
@@ -108,6 +112,7 @@ export function useTerminalViews({
       // the handler always returns true, so xterm keeps handling every key
       // exactly as it did.
       const probe = new ClearKeyProbe();
+      let imeInputGuard: ImeInputGuard | null = null;
       term.attachCustomKeyEventHandler((event) => {
         probe.noteKey(event, performance.now());
         // False is xterm's "this key is not mine": it returns before it
@@ -115,7 +120,10 @@ export function useTerminalViews({
         // gesture — the paste — goes ahead. See `browserHandlesKey`.
         if (browserHandlesKey(event, navigator.platform)) return false;
         const overridden = overriddenKeySequence(event);
-        if (overridden === null) return true;
+        if (overridden === null) {
+          imeInputGuard?.noteKeyPassedToXterm(event);
+          return true;
+        }
         // Back through xterm's own input path rather than straight to the
         // socket, so the bytes meet everything a typed key does — the probe's
         // report, the Ctrl latch — and the pane scrolls to the bottom the way
@@ -172,6 +180,15 @@ export function useTerminalViews({
         titles.push(cleaned);
       });
       term.open(body);
+      if (term.textarea) {
+        imeInputGuard = installImeInputGuard(term.textarea);
+        term.loadAddon({
+          activate() {},
+          dispose() {
+            imeInputGuard?.dispose();
+          },
+        });
+      }
       // An optional GPU path over the DOM renderer xterm just opened. Loaded
       // per terminal rather than once for the page: the addon paints one xterm's
       // canvas, and a pane opened later is as likely to be the one a context
