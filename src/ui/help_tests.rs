@@ -40,6 +40,7 @@ fn a_screen_too_short_for_every_row_says_where_the_view_is() {
     let text = rendered(&open_overlay(), 100, 12);
 
     assert!(text.contains("1/"), "no position indicator: {text}");
+    assert!(text.contains(concat!("nightcrow v", env!("CARGO_PKG_VERSION"))));
 }
 
 #[test]
@@ -47,7 +48,8 @@ fn scrolling_past_the_last_line_is_clamped_to_it() {
     let overlay = open_overlay();
     let mut scrolled = overlay.clone();
     scrolled.scroll_by(500);
-    rendered(&scrolled, 100, 20);
+    let text = rendered(&scrolled, 100, 20);
+    assert!(text.contains(concat!("nightcrow v", env!("CARGO_PKG_VERSION"))));
 
     let at_end = scrolled.scroll_offset();
     assert!(at_end > 0, "nothing scrolled");

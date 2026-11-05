@@ -97,7 +97,10 @@ pub(crate) fn render(
     let scroll = overlay.scroll_offset().min(max_scroll);
     overlay.set_scroll(scroll);
 
-    let title = format!(" Keyboard help — {leader_label} ? ");
+    let title = format!(
+        " nightcrow v{} — Keyboard help — {leader_label} ? ",
+        env!("CARGO_PKG_VERSION")
+    );
     let more = if max_scroll == 0 {
         String::new()
     } else {
