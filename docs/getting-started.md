@@ -41,6 +41,10 @@ nightcrow --daemon
 
 There is one session per running daemon. `nightcrow attach` reuses an existing session and starts one in the background when none is available. The daemon owns the open repositories and terminal programs; clients only attach to it. Startup prints the browser URL and the attach-socket path. A background daemon writes its output to `~/.nightcrow/daemon.out`.
 
+If the attached daemon was built from a different version, an interactive `nightcrow attach` asks whether to restart it; the default answer is no. Confirming gracefully stops the daemon, terminates all its terminal panes and running programs, starts a daemon with the current binary, and attaches. Declining, or running without both stdin and stderr connected to terminals, leaves the current session running; restart manually with `nightcrow stop` followed by `nightcrow attach`.
+
+Use `nightcrow attach -y` or `nightcrow attach --yes` to preapprove this version-mismatch restart without a prompt. These flags do not restart the session for other attach errors.
+
 Use `--exec COMMAND` once per startup pane when starting a daemon. Configured `[[startup_command]]` entries run first, followed by these CLI commands. The combined startup list is limited to 8 panes per project; each project gets its own list. With no startup commands, a project starts with no terminal process; press `<prefix> t` to open the first shell, or set `[terminal] auto_open = true` to open one automatically. All terminal panes in a project share an 8-pane limit; later panes are opened with `<prefix> t` until that limit is reached.
 
 The browser and TUI share repositories, terminals, project order, active project, and accent. The TUI's leader is `Ctrl+F` by default; see [Keyboard and mouse](keybindings.md) for all controls.
@@ -62,7 +66,7 @@ nightcrow update
 nightcrow update --version 0.1.1
 ```
 
-By default this downloads and verifies the latest binary from the official GitHub Release; the download reports its progress, since the release binary takes a while to arrive. An interrupted download leaves a `.nightcrow-download-*` temporary beside the installed binary, which a later start reclaims. Use `--version VER` to roll back to a published patch. Use `--path DIR` for a local checkout or `--git URL` for another source repository; those explicit development modes require Rust and run a locked, forced `cargo install`. Restart a running session after updating with `nightcrow stop`, then start nightcrow again so the daemon and its panes use the new binary. On Windows, `update` moves the installed executable aside before replacing it; if that parked copy is still in use, cleanup waits for the session or updater to exit. The new binary is already installed, so a second `update` is not needed.
+By default this downloads and verifies the latest binary from the official GitHub Release; the download reports its progress, since the release binary takes a while to arrive. An interrupted download leaves a `.nightcrow-download-*` temporary beside the installed binary, which a later start reclaims. Use `--version VER` to roll back to a published patch. Use `--path DIR` for a local checkout or `--git URL` for another source repository; those explicit development modes require Rust and run a locked, forced `cargo install`. Updating replaces only the installed binary; a running daemon continues with its current version until restarted. Its next `nightcrow attach` detects the version mismatch and follows the prompt above. On Windows, `update` moves the installed executable aside before replacing it; if that parked copy is still in use, cleanup waits for the session or updater to exit. The new binary is already installed, so a second `update` is not needed.
 
 ## Building and testing
 

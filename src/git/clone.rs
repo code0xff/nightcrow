@@ -145,8 +145,11 @@ fn repo_name_from_url(url: &str) -> Option<String> {
 pub fn git_available() -> bool {
     Command::new("git")
         .arg("--version")
-        .output()
-        .map(|out| out.status.success())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|status| status.success())
         .unwrap_or(false)
 }
 
