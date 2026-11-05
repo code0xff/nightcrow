@@ -42,6 +42,20 @@ fn attach_accepts_session_options_because_it_may_start_the_daemon() {
 }
 
 #[test]
+fn attach_yes_flag_defaults_to_false_and_accepts_short_and_long_forms() {
+    for (args, expected) in [
+        (&["nightcrow", "attach"][..], false),
+        (&["nightcrow", "attach", "-y"][..], true),
+        (&["nightcrow", "attach", "--yes"][..], true),
+    ] {
+        let Some(Commands::Attach { yes }) = parse(args).command else {
+            panic!("expected attach command for {args:?}");
+        };
+        assert_eq!(yes, expected, "arguments {args:?}");
+    }
+}
+
+#[test]
 fn a_bare_subcommand_with_no_session_options_is_accepted() {
     reject_session_options(&parse(&["nightcrow", "status"])).expect("nothing to conflict with");
 }

@@ -27,5 +27,6 @@ mod status;
 pub(crate) mod terminal_link;
 pub(crate) mod terminals;
 pub(crate) mod transport;
+pub(crate) mod version_mismatch;
 pub(crate) mod watch;
 pub(crate) mod wire;
