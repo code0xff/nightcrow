@@ -6,6 +6,7 @@ mod daemon;
 mod init;
 mod notify;
 pub(crate) mod plugin_cmd;
+pub(super) mod startup;
 pub(crate) mod status;
 mod stop;
 mod update;
@@ -70,7 +71,11 @@ pub(crate) enum Commands {
     ///
     /// A session started this way runs in the background, so it outlives the
     /// TUI that caused it to exist.
-    Attach,
+    Attach {
+        /// Restart a daemon with a different version without prompting.
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
     /// Manage plugin executables in ~/.nightcrow/plugins.
     ///
     /// Installing one only puts the binary in place; it stays inert until
@@ -161,7 +166,7 @@ fn command_that_starts_no_session(command: &Commands) -> Option<&'static str> {
         Commands::Status { .. } => Some("status"),
         Commands::Notify { .. } => Some("notify"),
         Commands::Update { .. } => Some("update"),
-        Commands::Attach => None,
+        Commands::Attach { .. } => None,
     }
 }
 

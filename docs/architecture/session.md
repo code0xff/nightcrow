@@ -23,6 +23,12 @@ Each local PTY buffers at most 256 output events in a synchronous bounded queue,
 
 Session limits are 8 PTYs per repository, pane dimensions of 1–500 rows × 1–1100 columns, and 256 KiB reconnect scrollback per pane. Close and resize use dedicated latest-state paths outside the bounded input queue so a full queue cannot lose the final request.
 
+## Daemon startup and attach
+
+`nightcrow attach` connects to the daemon and checks its build version during the attach handshake. If no daemon is available, it starts the current binary in a background session and retries for up to 20 seconds. Each unavailable retry checks whether that child exited; an early exit is reported with its PID, exit status, and `~/.nightcrow/daemon.out` path. A failed handshake or readiness timeout does not trigger process termination; a timeout reports the log path and leaves the child running. `nightcrow -d` reports that the child was spawned; it does not wait for readiness.
+
+When the client and daemon versions differ, attach offers a restart only when both stdin and stderr are terminals. The default is decline. The attach-specific `-y`/`--yes` option preapproves this restart without terminal input. Approval sends the daemon's graceful shutdown request, which terminates all existing panes and their programs, then starts one replacement daemon and attaches. A decline or non-interactive invocation without `--yes` leaves the session untouched; `--yes` does not restart for other connection failures. Updating the executable does not restart a running daemon; the next attach is where the mismatch is handled.
+
 ## Hub worker wakeups
 
 Each repository's terminal worker sleeps between passes instead of ticking. Every producer the worker used to discover by polling signals one coalescing wake per hub: a client queueing a command, a close, or a resize; the PTY reader and waiter threads queueing output, an exit, or a child's death; a plugin's command reader; and a departing size-owner connection starting the release grace. `stop` signals it as well, so shutdown never waits out the cap.

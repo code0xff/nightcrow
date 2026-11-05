@@ -30,25 +30,51 @@ fn marker_says_detached(marker: Option<&std::ffi::OsStr>) -> bool {
 
 /// Re-exec this binary in its own session and return.
 ///
-/// The caller is the foreground copy and should exit: the returned pid is the
-/// daemon. Output goes to `log_path`, appended, because a background process
-/// with no terminal has nowhere else to put the address it is serving on or
-/// the reason it failed to start.
-pub fn respawn_in_background(log_path: &std::path::Path) -> Result<u32> {
+/// The caller is the foreground copy and should exit or wait for the daemon.
+/// Output goes to `log_path`, appended, because a background process with no
+/// terminal has nowhere else to put the address it is serving on or the reason
+/// it failed to start.
+pub fn respawn_in_background(log_path: &std::path::Path) -> Result<std::process::Child> {
     let exe = std::env::current_exe().context("locating the nightcrow binary")?;
     let args = child_args(std::env::args_os().skip(1));
     let mut command = background_command(&exe, &args, log_path)?;
-    let child = command.spawn().context("starting the background daemon")?;
-    Ok(child.id())
+    command.spawn().context("starting the background daemon")
 }
 
 /// The arguments to hand the background copy: everything this one got, minus
 /// the flag that sent it there — otherwise it would background itself again,
-/// and again — and minus `attach`. The background copy is always the daemon;
-/// `-d attach` starts it from here and then attaches in *this* process.
+/// and again — and minus `attach` and its `-y`/`--yes` option. The background
+/// copy is always the daemon; `-d attach` starts it from here and then attaches
+/// in *this* process.
 fn child_args(args: impl Iterator<Item = std::ffi::OsString>) -> Vec<std::ffi::OsString> {
-    args.filter(|arg| arg != "-d" && arg != "--daemon" && arg != "attach")
-        .collect()
+    let mut attach_seen = false;
+    let mut value_expected = false;
+    let mut options_ended = false;
+    let mut filtered = Vec::new();
+    for arg in args {
+        if value_expected {
+            filtered.push(arg);
+            value_expected = false;
+            continue;
+        }
+        if arg == "-d" || arg == "--daemon" {
+            continue;
+        }
+        if !options_ended && arg == "attach" {
+            attach_seen = true;
+            continue;
+        }
+        if attach_seen && !options_ended && (arg == "-y" || arg == "--yes") {
+            continue;
+        }
+        if arg == "--" {
+            options_ended = true;
+        } else if !options_ended && (arg == "--exec" || arg == "--port" || arg == "--bind") {
+            value_expected = true;
+        }
+        filtered.push(arg);
+    }
+    filtered
 }
 
 /// Build the command that runs `exe` as a background session. Separate from

@@ -57,6 +57,23 @@ fn the_attach_subcommand_is_dropped_so_the_child_runs_the_daemon() {
 }
 
 #[test]
+fn attach_yes_flags_are_dropped_from_the_background_daemon_arguments() {
+    for flag in ["-y", "--yes"] {
+        let filtered = child_args(args(&["attach", flag]).into_iter());
+        assert!(filtered.is_empty(), "{flag}: {filtered:?}");
+    }
+}
+
+#[test]
+fn flag_like_exec_values_are_not_dropped_as_attach_flags() {
+    for value in ["-y", "--yes", "-d", "--daemon"] {
+        let filtered = child_args(args(&["attach", "--exec", value]).into_iter());
+
+        assert_eq!(filtered, args(&["--exec", value]));
+    }
+}
+
+#[test]
 fn every_other_argument_is_passed_through_in_order() {
     let given = args(&["--exec", "a", "--exec", "b", "--port", "1"]);
 

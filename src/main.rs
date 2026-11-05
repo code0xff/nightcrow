@@ -45,7 +45,7 @@ fn main() -> Result<()> {
         // commands, and a session that has to exist for the TUI to draw is not
         // a choice the user was making. `--daemon` still says how the session
         // runs — in the background — which is what it already does here.
-        Some(Commands::Attach) => run_attach_detached(),
+        Some(Commands::Attach { yes }) => run_attach_detached(yes),
         Some(Commands::Plugin { command }) => cli::plugin_cmd::run_plugin(command),
         Some(Commands::Stop { socket }) => run_stop(socket),
         Some(Commands::Status { socket }) => report_status_exit(run_status(socket)),

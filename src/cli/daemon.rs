@@ -10,8 +10,11 @@ pub(crate) fn run_daemon(
 ) -> Result<()> {
     if daemon && !crate::daemon::detach::is_detached_child() {
         let log = daemon_output_path()?;
-        let pid = crate::daemon::detach::respawn_in_background(&log)?;
-        eprintln!("nightcrow: session running in the background (pid {pid})");
+        let child = crate::daemon::detach::respawn_in_background(&log)?;
+        eprintln!(
+            "nightcrow: session running in the background (pid {})",
+            child.id()
+        );
         eprintln!("nightcrow: its output goes to {}", log.display());
         return Ok(());
     }
