@@ -7,6 +7,7 @@
 use super::protocol::{ClientMessage, ServerMessage, version};
 use super::terminal_link::{TerminalLink, TerminalRouter};
 use super::transport::UnixStream;
+use super::version_mismatch::VersionMismatch;
 use super::wire::{Incoming, Writer, pump, read_routed, send};
 use anyhow::{Context, Result, bail};
 use std::path::Path;
@@ -113,7 +114,7 @@ impl DaemonClient {
                     client,
                 } => {
                     if daemon != version() {
-                        bail!("daemon is {daemon}, this client is {}", version());
+                        return Err(VersionMismatch::new(version(), daemon).into());
                     }
                     break client;
                 }
@@ -122,7 +123,13 @@ impl DaemonClient {
                 other @ (ServerMessage::Repos { .. } | ServerMessage::Terminal { .. }) => {
                     queued.push(other)
                 }
-                ServerMessage::Error { message } => bail!("daemon refused the attach: {message}"),
+                ServerMessage::Error { message } => {
+                    if let Some(mismatch) = VersionMismatch::from_legacy_error(&message, &version())
+                    {
+                        return Err(mismatch.into());
+                    }
+                    bail!("daemon refused the attach: {message}");
+                }
                 // Dropped: an answer to a request this client has not made yet.
                 ServerMessage::Reloaded { .. } => {
                     tracing::debug!("attach: a reload answer arrived before the handshake");
