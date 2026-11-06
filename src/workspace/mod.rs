@@ -4,12 +4,16 @@
 //! yields an `Option`.
 
 mod accent;
+mod clone_dialog;
+mod clone_status;
 mod path_complete;
 mod path_tree;
 mod remembered;
 mod repo_input;
 mod repo_picker;
 
+pub(crate) use clone_dialog::CloneDialogAction;
+pub(crate) use clone_status::{clean_clone_display, clean_clone_text};
 pub use path_tree::PathTree;
 pub use repo_input::RepoInputResult;
 

@@ -1,5 +1,6 @@
 use super::Workspace;
 use crate::app::NoticeKind;
+use crate::ui::status_view::RepoInputMode;
 
 /// Outcome of confirming the dialog. The caller owns the workspace and does
 /// the opening; this only hands back an accepted path.
@@ -23,6 +24,8 @@ impl Workspace {
             .map(|p| p.repository_path().to_string())
             .unwrap_or_default();
         self.repo_input.active = true;
+        self.repo_input.mode = RepoInputMode::Open;
+        self.repo_input.clone_started_visible = false;
         self.repo_input.start_focus_flash();
         self.repo_input.candidates.clear();
         self.repo_input.picker = None;
@@ -31,6 +34,7 @@ impl Workspace {
 
     pub fn cancel_repo_input(&mut self) {
         self.repo_input.active = false;
+        self.repo_input.clone_started_visible = false;
         self.repo_input.focus_flash_started = None;
         self.repo_input.buf.clear();
         self.repo_input.candidates.clear();
@@ -80,13 +84,14 @@ impl Workspace {
     /// Extend the path from disk and offer what it could still become. Bound to
     /// Tab — the one field where a path is typed blind.
     pub fn repo_input_complete(&mut self) {
-        let completed = super::path_complete::complete_dir_path(&self.repo_input.buf);
+        let value = self.repo_input_value().to_string();
+        let completed = super::path_complete::complete_dir_path(&value);
         // Dropped whole rather than truncated: a cut path points elsewhere.
         if completed.buf.len() > REPO_INPUT_MAX_BYTES {
             return;
         }
         self.clear_notice(NoticeKind::RepoInput);
-        self.repo_input.buf = completed.buf;
+        self.set_repo_input_value(completed.buf);
         self.repo_input.candidates = completed.candidates;
     }
 
@@ -95,6 +100,14 @@ impl Workspace {
     /// would throw that away with nothing to undo it. Esc and Backspace
     /// discard.
     pub fn repo_input_push(&mut self, ch: char) {
+        if self.repo_input.mode == RepoInputMode::CloneParent {
+            self.clone_parent_push(ch);
+            return;
+        }
+        if self.repo_input.mode == RepoInputMode::CloneUrl {
+            self.clone_url_push(ch);
+            return;
+        }
         if self.repo_input.buf.len() + ch.len_utf8() > REPO_INPUT_MAX_BYTES {
             return;
         }
@@ -105,6 +118,14 @@ impl Workspace {
     }
 
     pub fn repo_input_pop(&mut self) {
+        if self.repo_input.mode == RepoInputMode::CloneParent {
+            self.clone_parent_pop();
+            return;
+        }
+        if self.repo_input.mode == RepoInputMode::CloneUrl {
+            self.clone_url_pop();
+            return;
+        }
         self.clear_notice(NoticeKind::RepoInput);
         self.repo_input.candidates.clear();
         self.repo_input.buf.pop();

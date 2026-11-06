@@ -23,6 +23,7 @@ fn unsolicited_frames() -> Vec<u8> {
     bytes.extend(encoded(&response(&ServerMessage::Hello {
         version: "test".into(),
         client: 1,
+        can_clone: true,
     })));
     bytes
 }

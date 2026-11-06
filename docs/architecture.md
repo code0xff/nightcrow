@@ -14,6 +14,14 @@ filesystem/git ──> per-repository runtime ──> session daemon
                                              └── authenticated web viewer
 ```
 
+## Frontend consistency
+
+The product direction is to minimize functional divergence between the TUI and web viewer; existing differences do not imply that all capabilities are already available on both surfaces.
+
+- For a user-facing addition, change, or fix, inspect the corresponding workflow on both surfaces. Keep supported operations, their meaning, results, and error behavior aligned, and update both frontends and their relevant tests when the change applies to both.
+- Adapt layout, physical shortcuts, and interaction mechanisms to terminal and browser constraints while preserving the user's intent. Keep client-local display state and transport-specific authentication boundaries as defined below; consistency does not require identical rendering, shared display preferences, or combined transports.
+- When a capability must remain specific to one frontend, document the concrete constraint and the available alternative in the relevant feature documentation. If a corresponding change is deferred, record the remaining gap and follow-up explicitly rather than treating a one-sided implementation as complete parity work.
+
 ## Ownership and data flow
 
 | Boundary | Owns | Exposes |

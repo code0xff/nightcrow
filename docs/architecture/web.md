@@ -70,7 +70,7 @@ The inline HTML preview editing engine lives as pure logic under `lib/edit/`: it
 
 Clone is delegated to the `git` binary, which supports credential helpers and SSH transport. Only `https/http/ssh/git+ssh` and scp-like `user@host:path` forms are allowed; `ext::`, `file://`, local paths, and `git://` are rejected. The URL is checked for length/control characters, and the destination name uses only a single plain-text segment extracted from the URL. The destination directory is reserved with `create_dir` before execution to reduce check/use races, and `remove_dir` runs after failure only if the directory is empty.
 
-Only one clone may run at a time, and a job outlives the request connection. Clients poll by job ID; a cleaned-up job ends with 404. The process uses `GIT_TERMINAL_PROMPT=0`, SSH liveness options, and an HTTP low-speed policy. These are limits that terminate a stalled transfer, not wall-clock deadlines guaranteeing completion.
+Clone admission and the worker belong to the shared session; see [session clone ownership](session.md#shared-state). `POST /api/clone` and `GET /api/clone` preserve their existing browser payload, status, job-polling, and 404 behavior while using that service. The attached TUI uses typed socket requests and receives clone capability in its handshake. Browser authentication and attach-socket permissions remain separate transport boundaries. The process uses `GIT_TERMINAL_PROMPT=0`, SSH liveness options, and an HTTP low-speed policy. These are limits that terminate a stalled transfer, not wall-clock deadlines guaranteeing completion.
 
 ## Web Push
 

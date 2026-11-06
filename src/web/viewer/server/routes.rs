@@ -51,7 +51,7 @@ pub(super) fn route(head: &RequestHead, state: &ViewerState) -> Vec<u8> {
                     .into_iter()
                     .map(|(id, view)| (id, view.into()))
                     .collect(),
-                state.git_available,
+                crate::session::can_clone(&state.session),
             );
             match serde_json::to_string(&Envelope::new(bootstrap)) {
                 Ok(json) => json_response("200 OK", &json, &[]),

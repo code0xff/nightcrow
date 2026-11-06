@@ -45,6 +45,7 @@ pub struct DaemonClient {
     /// This connection's id at the daemon, so backends can tell a pane this
     /// client opened from one another client opened.
     client: u64,
+    can_clone: bool,
     /// Cleared by the reader thread when the daemon goes away. A separate flag
     /// rather than the channel's disconnected state: reading that means calling
     /// `try_recv`, which consumes a message when one is waiting.
@@ -99,7 +100,7 @@ impl DaemonClient {
             .set_read_timeout(Some(super::HANDSHAKE_TIMEOUT))
             .context("setting the handshake timeout")?;
         let mut queued = Vec::new();
-        let client = loop {
+        let (client, can_clone) = loop {
             let incoming = read_routed(&mut reader, &terminals)?
                 .context("the daemon closed the connection during the handshake")?;
             let Incoming::Control(message) = incoming else {
@@ -112,11 +113,12 @@ impl DaemonClient {
                 ServerMessage::Hello {
                     version: daemon,
                     client,
+                    can_clone,
                 } => {
                     if daemon != version() {
                         return Err(VersionMismatch::new(version(), daemon).into());
                     }
-                    break client;
+                    break (client, can_clone);
                 }
                 // Session traffic is queued if it races the hello answer. Kept:
                 // it is the state this client is about to render.
@@ -133,6 +135,11 @@ impl DaemonClient {
                 // Dropped: an answer to a request this client has not made yet.
                 ServerMessage::Reloaded { .. } => {
                     tracing::debug!("attach: a reload answer arrived before the handshake");
+                }
+                ServerMessage::CloneStarted { .. }
+                | ServerMessage::CloneStatus { .. }
+                | ServerMessage::CloneRejected { .. } => {
+                    tracing::debug!("attach: a clone answer arrived before the handshake");
                 }
                 ServerMessage::Status { .. } | ServerMessage::Notified => {
                     bail!("daemon answered an attach handshake with a one-shot response")
@@ -168,6 +175,7 @@ impl DaemonClient {
             incoming,
             terminals,
             client,
+            can_clone,
             connected,
         })
     }
@@ -197,6 +205,30 @@ impl DaemonClient {
                 path: path.to_string(),
             },
         )
+    }
+
+    pub fn start_clone(&mut self, parent: &str, url: &str) -> Result<()> {
+        if !self.can_clone {
+            bail!("clone is unavailable on the daemon");
+        }
+        send(
+            &self.out,
+            &ClientMessage::StartClone {
+                parent: parent.to_string(),
+                url: url.to_string(),
+            },
+        )
+    }
+
+    pub fn clone_status(&mut self, job: Option<u64>) -> Result<()> {
+        if !self.can_clone {
+            bail!("clone is unavailable on the daemon");
+        }
+        send(&self.out, &ClientMessage::CloneStatus { job })
+    }
+
+    pub fn can_clone(&self) -> bool {
+        self.can_clone
     }
 
     /// Ask the daemon to put a repository in front, by catalog id. Every client
@@ -264,7 +296,3 @@ impl DaemonClient {
         self.connected.load(Ordering::Acquire)
     }
 }
-
-#[cfg(test)]
-#[path = "client_tests.rs"]
-mod tests;

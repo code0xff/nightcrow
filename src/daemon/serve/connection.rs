@@ -91,6 +91,7 @@ fn send_hello(session: &Session, id: u64) {
     let hello = crate::daemon::protocol::ServerMessage::Hello {
         version: crate::daemon::protocol::version(),
         client: id,
+        can_clone: crate::session::can_clone(&session.state),
     };
     session.clients.send_to(
         id,
