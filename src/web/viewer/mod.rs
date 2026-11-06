@@ -3,7 +3,6 @@
 //! the server run headless (`nightcrow -d`).
 
 pub mod assets;
-pub mod clone_jobs;
 pub mod dto;
 pub mod highlight;
 pub mod limits;

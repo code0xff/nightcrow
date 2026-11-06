@@ -1,4 +1,6 @@
 mod accent;
+mod clone_dialog;
+mod clone_workspace;
 mod draw_backend;
 mod enter_fullscreen;
 #[path = "../event_loop_tests.rs"]

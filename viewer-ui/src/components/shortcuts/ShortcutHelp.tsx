@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { version } from "../../../package.json";
 import { XIcon } from "../icons/actions";
 import { LeaderSettings } from "./LeaderSettings";
 import { ShortcutRow } from "./ShortcutRow";
@@ -107,9 +108,14 @@ export function ShortcutHelp({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-ink-700 px-3 py-2">
-          <span id={TITLE_ID} className="font-medium text-ink-50">
-            Keyboard shortcuts
-          </span>
+          <div>
+            <span id={TITLE_ID} className="block font-medium text-ink-50">
+              Keyboard shortcuts
+            </span>
+            <span className="block text-caption text-ink-400">
+              nightcrow v{version}
+            </span>
+          </div>
           <button
             type="button"
             onClick={onClose}

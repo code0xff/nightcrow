@@ -28,6 +28,15 @@ pub enum ClientMessage {
     OpenRepo {
         path: String,
     },
+    /// Start a remote clone under `parent`. The session owns admission and its worker.
+    StartClone {
+        parent: String,
+        url: String,
+    },
+    /// Read a job by id, or discover the currently running job when absent.
+    CloneStatus {
+        job: Option<u64>,
+    },
     CloseRepo {
         repo: String,
     },
@@ -85,6 +94,9 @@ pub enum ServerMessage {
         /// asked for from one that arrived because someone else did. Panes are
         /// created by request and reported to everybody.
         client: u64,
+        /// Whether the daemon found `git` when its session started.
+        #[serde(default)]
+        can_clone: bool,
     },
     /// One-shot answer to [`ClientMessage::Status`]. The connection closes
     /// after this response and is never registered as an attached client.
@@ -115,6 +127,12 @@ pub enum ServerMessage {
         /// toast and a terminal notice say the same thing.
         summary: String,
     },
+    /// A clone request was admitted; answered to the requester alone.
+    CloneStarted { job: u64, name: String },
+    /// Typed job lookup; unknown ids remain distinct from an idle session.
+    CloneStatus { lookup: crate::session::CloneLookup },
+    /// A clone start was refused; never routed through the generic error path.
+    CloneRejected { message: String },
     /// Something happened to one repository's terminals — a pane was created,
     /// exited, or reordered. Output travels as binary frames, not here.
     Terminal {

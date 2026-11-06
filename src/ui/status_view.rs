@@ -148,7 +148,17 @@ impl StatusView {
 #[derive(Default, Clone)]
 pub struct RepoInput {
     pub active: bool,
+    pub mode: RepoInputMode,
     pub buf: String,
+    pub clone_parent: String,
+    pub clone_url: String,
+    pub clone_status: CloneUiStatus,
+    pub clone_job: Option<u64>,
+    pub clone_owned: bool,
+    pub clone_started_visible: bool,
+    pub clone_open_pending: Option<String>,
+    pub clone_available: bool,
+    pub clone_poll_at: Option<Instant>,
     /// Directory names offered by the last Tab press, shown on the hint row.
     /// Any edit clears them: the list describes a fragment that no longer
     /// matches what is in the buffer.
@@ -160,6 +170,26 @@ pub struct RepoInput {
     /// Monotonic phase for the short focus cue shown when the dialog opens.
     pub(crate) focus_flash_started: Option<Instant>,
     pub(crate) focus_flash_phase: u8,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum RepoInputMode {
+    #[default]
+    Open,
+    CloneParent,
+    CloneUrl,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub enum CloneUiStatus {
+    #[default]
+    Idle,
+    Discovering,
+    Starting,
+    Running,
+    Unconfirmed,
+    Done(String),
+    Failed(String),
 }
 
 /// One bright/dim half-cycle of the repo-input focus cue.

@@ -52,6 +52,13 @@ pub(crate) enum ProjectRequest {
     /// the overlay outlives having any project open.
     ToggleHelp,
     OpenDialog,
+    StartClone {
+        parent: String,
+        url: String,
+    },
+    CloneStatus {
+        job: Option<u64>,
+    },
     CycleAccent,
     ReloadConfig,
 }

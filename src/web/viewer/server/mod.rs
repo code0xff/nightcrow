@@ -44,8 +44,6 @@ pub struct ViewerState {
     pub(super) limiter: RateLimiter,
     pub(super) connections: Arc<AtomicUsize>,
     pub(super) hot: crate::config::AgentIndicatorConfig,
-    pub(super) clones: crate::web::viewer::clone_jobs::CloneJobs,
-    pub(super) git_available: bool,
     pub(in crate::web::viewer::server) edit_previews: edit_preview::EditPreviewStore,
     /// Web Push, when its key could be loaded. `None` answers its routes 503.
     pub(super) push: Option<Arc<crate::web::viewer::push::PushService>>,
@@ -100,8 +98,6 @@ impl ViewerState {
             limiter: RateLimiter::new(),
             connections: Arc::new(AtomicUsize::new(0)),
             hot: options.hot,
-            clones: Default::default(),
-            git_available: crate::git::clone::git_available(),
             edit_previews: Default::default(),
             session,
             push: options.push,

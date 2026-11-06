@@ -5,6 +5,7 @@
 //! the repositories, terminal hubs, preferences, or PTY size arbitration.
 
 pub mod catalog;
+pub mod clone;
 pub mod limits;
 pub mod notice;
 pub mod prefs;
@@ -16,9 +17,11 @@ pub mod terminal;
 mod operations;
 mod state;
 
+pub use clone::{CloneJobState, CloneLookup, CloneStartError, CloneStarted};
 pub use operations::{
-    CloseError, NotifyError, OpenError, SessionRepo, accent, active_repo, close_repo, focus_repo,
-    list_repos, list_session_repos, notify_pane, open_repo, reorder_repos, set_accent,
+    CloseError, NotifyError, OpenError, SessionRepo, accent, active_repo, can_clone, clone_status,
+    close_repo, focus_repo, list_repos, list_session_repos, notify_pane, open_repo, reorder_repos,
+    set_accent, start_clone,
 };
 #[cfg(test)]
 pub use state::test_status_encoder;

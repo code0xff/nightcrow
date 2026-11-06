@@ -31,6 +31,7 @@ fn hello_version_mismatch_is_a_typed_attach_failure() {
     let error = connect_with_response(ServerMessage::Hello {
         version: daemon_version.clone(),
         client: 7,
+        can_clone: true,
     })
     .expect_err("different Hello version is rejected");
     let ConnectError::Failed(error) = error else {

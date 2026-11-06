@@ -111,6 +111,7 @@ fn start_handshake_server(socket: &Path, server_version: String) -> std::thread:
         let response = serde_json::to_vec(&ServerMessage::Hello {
             version: server_version,
             client: 1,
+            can_clone: true,
         })
         .expect("encode the daemon hello");
         write_frame(&mut stream, &Frame::control(response)).expect("write the daemon hello");

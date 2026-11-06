@@ -6,6 +6,25 @@
 use super::SessionState;
 use crate::session::catalog::{AddOutcome, RepoInfo};
 
+/// Whether the daemon can run a clone with the `git` executable it found at startup.
+pub fn can_clone(state: &SessionState) -> bool {
+    state.clones.available()
+}
+
+/// Start one validated clone and reserve its destination under the shared session slot.
+pub fn start_clone(
+    state: &SessionState,
+    parent: &str,
+    url: &str,
+) -> Result<super::CloneStarted, super::CloneStartError> {
+    state.clones.start(parent, url)
+}
+
+/// Read one job or discover the job currently running in the shared session.
+pub fn clone_status(state: &SessionState, job: Option<u64>) -> super::CloneLookup {
+    state.clones.lookup(job)
+}
+
 /// Why a repository could not be opened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenError {

@@ -4,6 +4,8 @@ Keep personal tool settings, account/access details, and checkout-specific proce
 
 The session daemon owns repositories and terminal panes; the TUI and web viewer attach to the same session. Follow the ownership boundaries and shared invariants in [architecture.md](docs/architecture.md).
 
+Keep TUI and web viewer capabilities and behavior aligned. For user-facing feature additions, changes, or fixes, check both frontends and follow the [frontend consistency policy](docs/architecture.md#frontend-consistency); document justified differences instead of silently widening the gap.
+
 ## Applicable guides
 
 The rules in [`.agents/rules/`](.agents/rules/) always apply. Tool-specific rule directories must symlink to this source rather than copy it.

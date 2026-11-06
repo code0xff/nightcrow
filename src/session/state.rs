@@ -32,6 +32,7 @@ pub struct SessionOptions {
 /// Repository, terminal, and shared-preference state independent of transport.
 pub struct SessionState {
     pub(super) catalog: Catalog,
+    pub(super) clones: super::clone::CloneService,
     pub(super) persist: bool,
     pub(super) prefs: PrefsStore,
     pub(super) reload_lock: Mutex<()>,
@@ -66,6 +67,7 @@ impl SessionState {
         catalog.set_paths(&options.repos);
         Self {
             catalog,
+            clones: super::clone::CloneService::new(),
             persist: options.persist,
             prefs: options.prefs,
             reload_lock: Mutex::new(()),
@@ -82,6 +84,11 @@ impl SessionState {
 
     pub fn status_snapshot(&self) -> Vec<RepositoryStatusSnapshot> {
         self.catalog.status_snapshot()
+    }
+
+    #[cfg(test)]
+    pub fn set_clone_runner_for_test(&self, runner: super::clone::CloneRunner) {
+        self.clones.set_runner_for_test(runner);
     }
 
     pub fn shutdown(&self) {

@@ -1,4 +1,4 @@
-use super::DaemonClient;
+use crate::daemon::client::DaemonClient;
 use crate::daemon::frame::{Frame, read_frame, write_frame};
 use crate::daemon::protocol::{ServerMessage, version};
 use crate::daemon::socket::DaemonSocket;
@@ -243,6 +243,7 @@ fn a_closed_connection_reads_as_gone() {
         let hello = serde_json::to_vec(&ServerMessage::Hello {
             version: version(),
             client: 0,
+            can_clone: true,
         })
         .expect("encodes");
         write_frame(&mut stream, &Frame::control(hello)).expect("writes");

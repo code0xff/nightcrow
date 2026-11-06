@@ -2,6 +2,7 @@
 
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { version } from "../../../package.json";
 import { mount, row, sheet } from "./ShortcutHelp.harness";
 import {
   SHORTCUT_ACTIONS,
@@ -127,6 +128,7 @@ describe("ShortcutHelp", () => {
     expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBe(
       dialog,
     );
+    expect(dialog.textContent).toContain(`nightcrow v${version}`);
   });
 
   it("the sheet receives keyboard focus when opened", () => {
