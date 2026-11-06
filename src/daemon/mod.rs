@@ -14,6 +14,12 @@ use std::time::Duration;
 pub(crate) const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(crate) mod client;
+#[cfg(test)]
+#[path = "client_clone_tests.rs"]
+mod client_clone_tests;
+#[cfg(test)]
+#[path = "client_tests.rs"]
+mod client_tests;
 pub(crate) mod clients;
 pub(crate) mod detach;
 pub(crate) mod frame;

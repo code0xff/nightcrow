@@ -65,6 +65,7 @@ fn an_unexpected_server_message_is_the_protocol_failure_with_its_dedicated_exit_
     let error = decode_status(ServerMessage::Hello {
         version: version(),
         client: 1,
+        can_clone: true,
     })
     .unwrap_err();
     assert!(error.contains("unexpected response"), "{error}");

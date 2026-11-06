@@ -12,7 +12,7 @@ impl Workspace {
     pub fn repo_input_browse(&mut self) {
         // The candidate row answers the same question the browser does.
         self.repo_input.candidates.clear();
-        match PathTree::open(&self.repo_input.buf) {
+        match PathTree::open(self.repo_input_value()) {
             Some(tree) => {
                 self.clear_notice(NoticeKind::RepoInput);
                 self.repo_input.picker = Some(tree);
@@ -42,7 +42,7 @@ impl Workspace {
             return;
         }
         self.clear_notice(NoticeKind::RepoInput);
-        self.repo_input.buf = picked;
+        self.set_repo_input_value(picked);
         self.repo_input.candidates.clear();
     }
 

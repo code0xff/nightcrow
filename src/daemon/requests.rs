@@ -68,6 +68,24 @@ fn handle(message: ClientMessage, id: u64, session: &Session) {
                 "the maximum number of repositories is already open",
             ),
         },
+        ClientMessage::StartClone { parent, url } => {
+            let reply = match session::start_clone(state, &parent, &url) {
+                Ok(started) => ServerMessage::CloneStarted {
+                    job: started.job,
+                    name: started.name,
+                },
+                Err(error) => ServerMessage::CloneRejected {
+                    message: error.message().to_string(),
+                },
+            };
+            session.clients.send_to(id, encode_reply(&reply));
+        }
+        ClientMessage::CloneStatus { job } => {
+            let reply = ServerMessage::CloneStatus {
+                lookup: session::clone_status(state, job),
+            };
+            session.clients.send_to(id, encode_reply(&reply));
+        }
         ClientMessage::CloseRepo { repo } => match session::close_repo(state, &repo) {
             Ok(()) => changed(session),
             Err(CloseError::UnknownRepo) => refuse(id, session, "unknown repository"),

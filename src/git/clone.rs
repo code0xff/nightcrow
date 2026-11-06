@@ -22,7 +22,7 @@ const ALLOWED_SCHEMES: [&str; 4] = ["https://", "http://", "ssh://", "git+ssh://
 /// request body that is only ever a remote address.
 pub const MAX_CLONE_URL_BYTES: usize = 2048;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloneUrlError {
     Empty,
     TooLong,

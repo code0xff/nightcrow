@@ -215,6 +215,7 @@ fn handshake_and_count_clients(listener: crate::daemon::transport::UnixListener)
                     let hello = serde_json::to_vec(&ServerMessage::Hello {
                         version: version(),
                         client: 1,
+                        can_clone: true,
                     })
                     .expect("encode hello");
                     write_frame(&mut stream, &Frame::control(hello)).expect("write hello");

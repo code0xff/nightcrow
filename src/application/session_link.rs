@@ -24,6 +24,7 @@ impl SessionLink {
 
     pub(crate) fn sync(&mut self, ws: &mut Workspace, ctx: &ProjectContext) -> bool {
         let mut changed = false;
+        ws.set_clone_available(self.client.can_clone());
         for message in self.client.drain() {
             match message {
                 ServerMessage::Repos {
@@ -31,6 +32,9 @@ impl SessionLink {
                     active,
                     accent,
                 } => {
+                    let repo_paths: Vec<String> =
+                        repos.iter().map(|repo| repo.path.clone()).collect();
+                    ws.clone_open_confirmed(&repo_paths);
                     adopt(ws, ctx, &repos, &self.client);
                     // After the set has settled, because the tab to put in front
                     // may be one this very message created — which is the usual
@@ -46,6 +50,7 @@ impl SessionLink {
                 // A refusal this client asked for — a path that is not a
                 // directory, or one repository too many.
                 ServerMessage::Error { message } => {
+                    ws.clone_open_failed();
                     ws.raise_notice(crate::app::NoticeKind::Project, message);
                     changed = true;
                 }
@@ -53,6 +58,33 @@ impl SessionLink {
                 // same answer to the same request.
                 ServerMessage::Reloaded { summary } => {
                     ws.raise_notice(crate::app::NoticeKind::Session, summary);
+                    changed = true;
+                }
+                ServerMessage::CloneStarted { job, .. } => {
+                    ws.clone_started(job);
+                    changed = true;
+                }
+                ServerMessage::CloneStatus { lookup } => {
+                    if let Some(path) = ws.apply_clone_lookup(lookup) {
+                        match self.client.open_repo(&path) {
+                            Ok(()) => {
+                                ws.clone_open_is_present();
+                            }
+                            Err(err) => {
+                                ws.clone_open_failed();
+                                ws.raise_notice(
+                                    crate::app::NoticeKind::Project,
+                                    format!(
+                                        "clone finished at {path}, but could not open it: {err}"
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                    changed = true;
+                }
+                ServerMessage::CloneRejected { message } => {
+                    ws.clone_rejected(&message);
                     changed = true;
                 }
                 // Answered during the handshake; a later one would mean the
@@ -70,6 +102,14 @@ impl SessionLink {
                     }
                 }
             }
+        }
+        if let Some(job) = ws.take_clone_poll(std::time::Instant::now())
+            && let Err(err) = self.client.clone_status(job)
+        {
+            ws.raise_notice(
+                crate::app::NoticeKind::Project,
+                format!("could not check clone status: {err}"),
+            );
         }
         changed
     }
@@ -110,6 +150,27 @@ impl SessionLink {
                 ws.start_repo_input();
                 return;
             }
+            ProjectRequest::StartClone { parent, url } => {
+                if let Err(err) = self.client.start_clone(&parent, &url) {
+                    // A failed write does not prove the daemon failed to admit
+                    // the clone; the status query can recover its running id.
+                    ws.raise_notice(
+                        crate::app::NoticeKind::Project,
+                        format!("could not confirm the clone request: {err}"),
+                    );
+                    let _ = self.client.clone_status(None);
+                }
+                return;
+            }
+            ProjectRequest::CloneStatus { job } => {
+                if let Err(err) = self.client.clone_status(job) {
+                    ws.raise_notice(
+                        crate::app::NoticeKind::Project,
+                        format!("could not check clone status: {err}"),
+                    );
+                }
+                return;
+            }
             // The overlay is this client's own, like the dialog: nothing about
             // it is the session's business.
             ProjectRequest::ToggleHelp => {
@@ -118,7 +179,23 @@ impl SessionLink {
             }
             // Opening focuses in the daemon, so the tab comes forward with the
             // set rather than needing to be chased here.
-            ProjectRequest::Open(path) => self.client.open_repo(&path),
+            ProjectRequest::Open(path) => {
+                let clone_result = ws.clone_open_requested(&path);
+                match self.client.open_repo(&path) {
+                    Ok(()) => {
+                        if clone_result {
+                            ws.clone_open_is_present();
+                        }
+                        return;
+                    }
+                    Err(err) => {
+                        if clone_result {
+                            ws.clone_open_failed();
+                        }
+                        Err(err)
+                    }
+                }
+            }
             // Closing is by id, so a tab with no id is not one the daemon knows
             // about and closing it locally would only hide it until the next
             // broadcast put it back.

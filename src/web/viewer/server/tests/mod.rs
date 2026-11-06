@@ -2,6 +2,7 @@ mod active_repo;
 mod auth;
 mod bootstrap;
 mod clone;
+mod clone_shared;
 mod closing;
 mod commit_routes;
 mod edit_preview;

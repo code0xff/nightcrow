@@ -93,6 +93,8 @@ The leader followed by `?` raises the command list in both: the browser's shortc
 
 `<prefix> o` opens a path field. `Tab` completes a directory, `Down` opens the directory browser, and `Enter` opens the selected path — in the browser it opens the highlighted directory, in the field it submits the typed text. `Esc` closes the browser first and the dialog second. Paths may be absolute, relative to the current directory, or begin with `~`; shell expansion, variables, globs, and files are not accepted. See [Views → The repo dialog](views.md#the-repo-dialog).
 
+While the dialog is open, `Shift+Tab` switches between Open and Clone. Clone asks for a parent directory with the same completion and browser keys. `Enter` advances to the URL field; `Enter` there starts the clone. `Esc` backs out from the URL field, cancels at the parent field, or hides a running job. See [Views → The repo dialog](views.md#the-repo-dialog) for result handling and focus behavior.
+
 ## Mouse
 
 Mouse capture is enabled by default. Click a project tab or panel to focus it; click a terminal pane to focus it and forward the report to programs that requested mouse input. The wheel scrolls the pane under the pointer. Clickable hint-bar commands behave like their key equivalents.

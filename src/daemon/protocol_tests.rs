@@ -24,6 +24,12 @@ fn every_client_message_survives_the_round_trip() {
         ClientMessage::OpenRepo {
             path: "/w/repo".into(),
         },
+        ClientMessage::StartClone {
+            parent: "/w".into(),
+            url: "https://example.com/team/repo.git".into(),
+        },
+        ClientMessage::CloneStatus { job: None },
+        ClientMessage::CloneStatus { job: Some(8) },
         ClientMessage::CloseRepo { repo: "r1".into() },
         ClientMessage::ReorderRepos {
             order: vec!["r2".into(), "r1".into()],
@@ -61,6 +67,42 @@ fn every_server_message_survives_the_round_trip() {
         ServerMessage::Hello {
             version: "0.1.0".into(),
             client: 3,
+            can_clone: true,
+        },
+        ServerMessage::CloneStarted {
+            job: 8,
+            name: "repo".into(),
+        },
+        ServerMessage::CloneStatus {
+            lookup: crate::session::CloneLookup::Found {
+                job: 8,
+                state: crate::session::CloneJobState::Running,
+            },
+        },
+        ServerMessage::CloneStatus {
+            lookup: crate::session::CloneLookup::Idle,
+        },
+        ServerMessage::CloneStatus {
+            lookup: crate::session::CloneLookup::Found {
+                job: 9,
+                state: crate::session::CloneJobState::Done {
+                    path: "/tmp/repo".into(),
+                },
+            },
+        },
+        ServerMessage::CloneStatus {
+            lookup: crate::session::CloneLookup::Found {
+                job: 10,
+                state: crate::session::CloneJobState::Failed {
+                    message: "remote refused the request".into(),
+                },
+            },
+        },
+        ServerMessage::CloneStatus {
+            lookup: crate::session::CloneLookup::Unknown { job: 900 },
+        },
+        ServerMessage::CloneRejected {
+            message: "invalid URL".into(),
         },
         ServerMessage::Status {
             status: DaemonStatus {
@@ -97,6 +139,22 @@ fn every_server_message_survives_the_round_trip() {
     for message in &messages {
         assert_eq!(&round_trip_server(message), message);
     }
+}
+
+#[test]
+fn a_legacy_hello_without_clone_capability_defaults_to_unavailable() {
+    let hello: ServerMessage =
+        serde_json::from_str(r#"{"type":"hello","version":"0.1.26","client":3}"#)
+            .expect("older same-version hello is readable");
+
+    assert_eq!(
+        hello,
+        ServerMessage::Hello {
+            version: "0.1.26".into(),
+            client: 3,
+            can_clone: false,
+        }
+    );
 }
 
 #[test]
