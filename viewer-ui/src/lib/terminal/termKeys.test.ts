@@ -26,6 +26,11 @@ describe("termKeySequence", () => {
     expect(termKeySequence("shift-tab", true)).toBe("\x1b[Z");
   });
 
+  it("Shift+Left sends the modified-arrow sequence in either cursor mode", () => {
+    expect(termKeySequence("shift-left")).toBe("\x1b[1;2D");
+    expect(termKeySequence("shift-left", true)).toBe("\x1b[1;2D");
+  });
+
   it("Ctrl combinations send control bytes based on alphabetic order", () => {
     // Ctrl-C = 3rd letter = 0x03, and so on down the list.
     expect(termKeySequence("ctrl-b")).toBe("\x02");
@@ -184,6 +189,11 @@ describe("TERM_KEY_BAR", () => {
   it("Alt appears immediately after Shift+Tab", () => {
     const labels = TERM_KEY_BAR.map((k) => k.label);
     expect(labels[labels.indexOf("⇧Tab") + 1]).toBe("Alt");
+  });
+
+  it("includes Shift+Left beside the ordinary Left arrow", () => {
+    const keys = TERM_KEY_BAR.filter((item) => item.kind === "key").map((item) => item.key);
+    expect(keys[keys.indexOf("left") - 1]).toBe("shift-left");
   });
 
   it("the bar has no duplicate keys", () => {

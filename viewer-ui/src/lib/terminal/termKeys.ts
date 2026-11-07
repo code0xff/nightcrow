@@ -17,6 +17,7 @@ export type TermKey =
   | "esc"
   | "tab"
   | "shift-tab"
+  | "shift-left"
   | "ctrl-b"
   | "ctrl-c"
   | "ctrl-d"
@@ -37,6 +38,7 @@ export const TERM_KEY_SEQUENCES: Record<TermKey, string> = {
   esc: "\x1b",
   tab: "\t",
   "shift-tab": "\x1b[Z",
+  "shift-left": "\x1b[1;2D",
   "ctrl-b": "\x02",
   "ctrl-c": "\x03",
   "ctrl-d": "\x04",
@@ -210,6 +212,7 @@ export const TERM_KEY_BAR: TermBarItem[] = [
   { kind: "key", key: "ctrl-z", label: "^Z", aria: "Control Z" },
   { kind: "key", key: "ctrl-l", label: "^L", aria: "Control L" },
   { kind: "key", key: "ctrl-r", label: "^R", aria: "Control R" },
+  { kind: "key", key: "shift-left", label: "⇧←", aria: "Shift Left arrow" },
   { kind: "key", key: "left", label: "←", aria: "Left arrow" },
   { kind: "key", key: "down", label: "↓", aria: "Down arrow" },
   { kind: "key", key: "up", label: "↑", aria: "Up arrow" },
