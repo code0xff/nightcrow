@@ -20,6 +20,7 @@ import type { ScreenScale } from "../ui/screenScale";
 import { createTitleThrottle } from "../../lib/terminal/titleThrottle";
 import type { TitleThrottle } from "../../lib/terminal/titleThrottle";
 import { enableWebglRenderer } from "../../lib/terminal/webglRenderer";
+import { atlasRefreshAddon } from "../../lib/terminal/atlasRefresh";
 import { installImeInputGuard, type ImeInputGuard } from "../../lib/terminal/imeInputGuard";
 import {
   queueTerminalBarrier,
@@ -195,6 +196,7 @@ export function useTerminalViews({
       // budget can still afford. `enableWebglRenderer` leaves this pane on the
       // renderer it already has when WebGL is unavailable or later lost.
       enableWebglRenderer(term, () => new WebglAddon());
+      term.loadAddon(atlasRefreshAddon(term));
       // Before a byte is written: what follows was drawn against the PTY's
       // grid. An opened xterm starts at 80×24, and a hidden parser also needs
       // the confirmed grid before it consumes output; parsing at the default
