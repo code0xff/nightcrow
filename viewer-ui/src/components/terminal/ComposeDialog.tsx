@@ -11,6 +11,7 @@ import {
   type RecognizerFactory,
 } from "../../lib/terminal/dictation";
 import { DictationButton, FORM_ICON_BUTTON } from "./DictationButton";
+import { ToastEcho } from "../feedback/ToastEcho";
 
 const TITLE_ID = "nc-compose-title";
 
@@ -37,8 +38,6 @@ export function ComposeDialog({
   onSend,
   onAttachImage,
   uploading,
-  uploadError,
-  onDismissUploadError,
   onClose,
   dictation,
 }: {
@@ -49,8 +48,6 @@ export function ComposeDialog({
   onSend: () => boolean;
   onAttachImage: (image: File) => void;
   uploading: boolean;
-  uploadError: string | null;
-  onDismissUploadError: () => void;
   onClose: () => void;
   /** Voice input, injected by tests; read from the browser otherwise. */
   dictation?: { availability: DictationAvailability; factory: RecognizerFactory | null };
@@ -59,7 +56,7 @@ export function ComposeDialog({
   const imageRef = useRef<HTMLInputElement>(null);
   const [failed, setFailed] = useState(false);
   const sendable = isSendable(draft);
-  const canSend = sendable && !uploading && uploadError === null;
+  const canSend = sendable && !uploading;
   const chord = sendChordLabel(platform());
   const [voice] = useState(() => {
     if (dictation) return dictation;
@@ -106,6 +103,8 @@ export function ComposeDialog({
         className="nc-rise-in flex w-[56rem] max-w-full flex-col rounded-lg border border-ink-700 bg-ink-900"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Upload and microphone errors are toasts, outside this modal. */}
+        <ToastEcho />
         <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-2">
           <span id={TITLE_ID} className="min-w-0 truncate font-medium text-ink-50">
             Send to {label}
@@ -133,10 +132,10 @@ export function ComposeDialog({
               send();
             }
           }}
-          rows={10}
+          rows={8}
           aria-label="message"
           // 16px, not the page's 14: iOS zooms the page into any field smaller.
-          className="m-3 resize-y rounded-sm border border-ink-700 bg-ink-950 p-2 font-mono text-[16px] text-ink-50 focus:border-accent focus:outline-none"
+          className="m-3 resize-none overflow-y-auto rounded-sm border border-ink-700 bg-ink-950 p-2 font-mono text-[16px] text-ink-50 focus:border-accent focus:outline-none"
         />
         <input
           ref={imageRef}
@@ -173,18 +172,6 @@ export function ComposeDialog({
           {uploading && (
             <span role="status" aria-live="polite" className="text-ink-300">
               Uploading image…
-            </span>
-          )}
-          {uploadError && (
-            <span role="alert" className="flex basis-full items-center gap-2 text-removed">
-              <span className="min-w-0">{uploadError}</span>
-              <button
-                type="button"
-                onClick={onDismissUploadError}
-                className="min-h-11 shrink-0 rounded-sm px-2 underline"
-              >
-                Dismiss
-              </button>
             </span>
           )}
           {failed && (

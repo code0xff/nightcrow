@@ -7,10 +7,9 @@ import { ComposeDialog } from "./ComposeDialog";
 
 afterEach(cleanup);
 
-function mount(initial = "", sendResult = true, upload: { busy?: boolean; error?: string | null } = {}) {
+function mount(initial = "", sendResult = true, upload: { busy?: boolean } = {}) {
   const onSend = vi.fn(() => sendResult);
   const onAttachImage = vi.fn();
-  const onDismissUploadError = vi.fn();
   const onClose = vi.fn();
   function Host() {
     const [draft, setDraft] = useState(initial);
@@ -22,8 +21,6 @@ function mount(initial = "", sendResult = true, upload: { busy?: boolean; error?
         onSend={onSend}
         onAttachImage={onAttachImage}
         uploading={upload.busy ?? false}
-        uploadError={upload.error ?? null}
-        onDismissUploadError={onDismissUploadError}
         onClose={onClose}
       />
     );
@@ -35,7 +32,7 @@ function mount(initial = "", sendResult = true, upload: { busy?: boolean; error?
     </section>,
   );
   const field = screen.getByRole("textbox", { name: "message" }) as HTMLTextAreaElement;
-  return { field, onSend, onAttachImage, onDismissUploadError, onClose };
+  return { field, onSend, onAttachImage, onClose };
 }
 
 describe("ComposeDialog", () => {
@@ -126,21 +123,12 @@ describe("ComposeDialog", () => {
     expect(input.value).toBe("");
   });
 
-  it("uploading_and_failed_attachments_keep_send_disabled", () => {
+  it("an_upload_in_progress_keeps_send_disabled", () => {
     const pending = mount("typed text", true, { busy: true });
     expect(screen.getByRole("status").textContent).toBe("Uploading image…");
     expect((screen.getByRole("button", { name: /send/i }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.keyDown(pending.field, { key: "Enter", ctrlKey: true });
     fireEvent.keyDown(pending.field, { key: "Enter", metaKey: true });
     expect(pending.onSend).not.toHaveBeenCalled();
-    cleanup();
-    const failed = mount("typed text", true, { error: "Could not attach image." });
-    expect(screen.getByRole("alert").textContent).toMatch(/Could not attach image/);
-    expect((screen.getByRole("button", { name: /send/i }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.keyDown(failed.field, { key: "Enter", ctrlKey: true });
-    fireEvent.keyDown(failed.field, { key: "Enter", metaKey: true });
-    expect(failed.onSend).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(failed.onDismissUploadError).toHaveBeenCalled();
   });
 });

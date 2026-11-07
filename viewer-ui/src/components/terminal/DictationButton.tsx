@@ -13,8 +13,8 @@ export const FORM_ICON_BUTTON =
 
 /**
  * The message form's voice input. Absent where the browser has no speech
- * recognition; on plain http it stays visible but only explains, since hiding
- * it would leave no clue why a phone never offers it.
+ * recognition; on plain http it stays visible but inert, its name and tooltip
+ * saying why, since hiding it would leave no clue why a phone never offers it.
  */
 export function DictationButton({
   availability,
@@ -25,7 +25,7 @@ export function DictationButton({
   factory: RecognizerFactory | null;
   onText: (text: string) => void;
 }) {
-  const { listening, error, toggle, dismissError, report } = useDictation(
+  const { listening, toggle } = useDictation(
     availability === "ready" ? factory : null,
     onText,
   );
@@ -33,33 +33,22 @@ export function DictationButton({
   const ready = availability === "ready";
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={ready ? toggle : () => report(INSECURE_DICTATION_MESSAGE)}
-        aria-pressed={ready ? listening : undefined}
-        aria-label={
-          !ready ? "Voice input needs HTTPS" : listening ? "Stop voice input" : "Voice input"
-        }
-        title={ready ? (listening ? "Stop voice input" : "Voice input") : INSECURE_DICTATION_MESSAGE}
-        className={`${FORM_ICON_BUTTON} ${
-          listening ? "animate-pulse text-accent" : ready ? "text-ink-400" : "text-ink-600"
-        }`}
-      >
-        <MicIcon />
-      </button>
-      {error && (
-        <span role="alert" className="flex basis-full items-center gap-2 text-removed">
-          <span className="min-w-0">{error}</span>
-          <button
-            type="button"
-            onClick={dismissError}
-            className="min-h-11 shrink-0 rounded-sm px-2 underline"
-          >
-            Dismiss
-          </button>
-        </span>
-      )}
-    </>
+    <button
+      type="button"
+      // Inert on plain http: the reason is in its name and tooltip, not a
+      // line that would push the form's buttons around.
+      onClick={ready ? toggle : undefined}
+      aria-disabled={!ready || undefined}
+      aria-pressed={ready ? listening : undefined}
+      aria-label={
+        !ready ? "Voice input needs HTTPS" : listening ? "Stop voice input" : "Voice input"
+      }
+      title={ready ? (listening ? "Stop voice input" : "Voice input") : INSECURE_DICTATION_MESSAGE}
+      className={`${FORM_ICON_BUTTON} ${
+        listening ? "animate-pulse text-accent" : ready ? "text-ink-400" : "text-ink-600"
+      }`}
+    >
+      <MicIcon />
+    </button>
   );
 }

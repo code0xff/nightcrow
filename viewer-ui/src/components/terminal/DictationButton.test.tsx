@@ -6,7 +6,16 @@ import { useState } from "react";
 import { ComposeDialog } from "./ComposeDialog";
 import type { DictationAvailability, Recognizer } from "../../lib/terminal/dictation";
 
-afterEach(cleanup);
+const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
+vi.mock("../../lib/runtime/toast", async (original) => ({
+  ...(await original<typeof import("../../lib/runtime/toast")>()),
+  toast: { error: toastError },
+}));
+
+afterEach(() => {
+  cleanup();
+  toastError.mockReset();
+});
 
 function fakeRecognizer() {
   const r: Recognizer = {
@@ -41,8 +50,6 @@ function mount(availability: DictationAvailability, initial = "", startThrows = 
         onSend={() => true}
         onAttachImage={() => {}}
         uploading={false}
-        uploadError={null}
-        onDismissUploadError={() => {}}
         onClose={() => {}}
         dictation={{ availability, factory }}
       />
@@ -63,13 +70,15 @@ describe("DictationButton", () => {
     expect(screen.queryByRole("button", { name: /voice input/i })).toBeNull();
   });
 
-  it("explains_https_instead_of_listening_on_plain_http", () => {
+  it("is_inert_on_plain_http_without_pushing_a_message_into_the_form", () => {
     const { recognizers } = mount("insecure");
     const button = screen.getByRole("button", { name: "Voice input needs HTTPS" });
-    expect(button.getAttribute("aria-disabled")).toBeNull();
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.getAttribute("title")).toMatch(/HTTPS or localhost/);
     fireEvent.click(button);
     expect(recognizers).toHaveLength(0);
-    expect(screen.getByRole("alert").textContent).toMatch(/HTTPS or localhost/);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   it("appends_final_text_to_the_draft_without_sending", () => {
@@ -101,13 +110,14 @@ describe("DictationButton", () => {
     fireEvent.click(screen.getByRole("button", { name: "Voice input" }));
     act(() => recognizers[0].onerror?.({ error: "not-allowed" }));
     act(() => recognizers[0].onend?.());
-    expect(screen.getByRole("alert").textContent).toMatch(/blocked/);
+    expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/blocked/));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("reports_a_start_that_throws_and_does_not_claim_to_listen", () => {
     mount("ready", "", true);
     fireEvent.click(screen.getByRole("button", { name: "Voice input" }));
-    expect(screen.getByRole("alert").textContent).toMatch(/failed/);
+    expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/failed/));
     expect(screen.getByRole("button", { name: "Voice input" })).toBeTruthy();
   });
 

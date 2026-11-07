@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { api } from "../../api";
 import { sendTerminalMessage } from "../../api/terminal";
+import { toast } from "../../lib/runtime/toast";
 import { SUBMIT_KEY, composedInput, isSendable } from "../../lib/terminal/composeInput";
 import { IMAGE_MIME_TYPES, MAX_IMAGE_BYTES, pathInput } from "../../lib/terminal/pasteImage";
 import type { PaneView } from "../../lib/terminal/terminalLayout";
@@ -40,7 +41,6 @@ export function useCompose({
   const [opened, setOpened] = useState<number | null>(null);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const openedRef = useRef<number | null>(null);
   const panesRef = useRef(panes);
   const uploadSession = useRef(0);
@@ -55,7 +55,6 @@ export function useCompose({
     uploadSession.current += 1;
     uploadingRef.current = false;
     setUploading(false);
-    setUploadError(null);
   };
 
   useEffect(
@@ -94,11 +93,11 @@ export function useCompose({
   const attachImage = async (image: File) => {
     if (target === null || uploadingRef.current) return;
     if (!IMAGE_MIME_TYPES.includes(image.type as (typeof IMAGE_MIME_TYPES)[number])) {
-      setUploadError("Choose a PNG, JPEG, GIF, or WebP image.");
+      toast.error("Choose a PNG, JPEG, GIF, or WebP image.");
       return;
     }
     if (image.size > MAX_IMAGE_BYTES) {
-      setUploadError("Image must be 10 MiB or smaller.");
+      toast.error("Image must be 10 MiB or smaller.");
       return;
     }
 
@@ -110,7 +109,6 @@ export function useCompose({
       panesRef.current.includes(pane);
     uploadingRef.current = true;
     setUploading(true);
-    setUploadError(null);
     try {
       const path = await api.pasteImage(image);
       if (!path) throw new Error("the server returned no image path");
@@ -122,7 +120,9 @@ export function useCompose({
       });
     } catch (err) {
       if (isCurrent()) {
-        setUploadError(
+        // A toast, not a line in the form: the draft shows no image path, so
+        // what Send would send is already on screen.
+        toast.error(
           err instanceof Error ? `Could not attach image: ${err.message}` : "Could not attach image.",
         );
       }
@@ -134,11 +134,9 @@ export function useCompose({
     }
   };
 
-  const dismissUploadError = () => setUploadError(null);
-
   /** False when nothing went out — the socket is down — so the draft stays. */
   const send = (): boolean => {
-    if (target === null || uploadingRef.current || uploadError !== null || !isSendable(draft)) {
+    if (target === null || uploadingRef.current || !isSendable(draft)) {
       return false;
     }
     const bracketed =
@@ -171,7 +169,5 @@ export function useCompose({
     send,
     attachImage,
     uploading,
-    uploadError,
-    dismissUploadError,
   };
 }

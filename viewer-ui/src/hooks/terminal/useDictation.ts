@@ -5,6 +5,13 @@ import {
   type Recognizer,
   type RecognizerFactory,
 } from "../../lib/terminal/dictation";
+import { toast } from "../../lib/runtime/toast";
+
+/** A failure goes to a toast, so the form never shifts under the person. */
+function report(code: string) {
+  const message = dictationErrorMessage(code);
+  if (message) toast.error(message);
+}
 
 /**
  * One utterance per press: the recognizer stops on its own after a pause, and
@@ -19,7 +26,6 @@ export function useDictation(
   onText: (text: string) => void,
 ) {
   const [listening, setListening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const recognizerRef = useRef<Recognizer | null>(null);
   // The latest callback, since a result arrives renders after the press.
   const onTextRef = useRef(onText);
@@ -37,7 +43,7 @@ export function useDictation(
     try {
       recognizer = factory();
     } catch {
-      setError(dictationErrorMessage("unavailable"));
+      report("unavailable");
       return;
     }
     recognizer.lang = navigator.language;
@@ -47,17 +53,16 @@ export function useDictation(
       const text = finalTranscript(event);
       if (text) onTextRef.current(text);
     };
-    recognizer.onerror = (event) => setError(dictationErrorMessage(event.error));
+    recognizer.onerror = (event) => report(event.error);
     recognizer.onend = () => {
       if (recognizerRef.current === recognizer) recognizerRef.current = null;
       setListening(false);
     };
-    setError(null);
     try {
       recognizer.start();
     } catch {
       // Starting can throw synchronously, e.g. while another start is pending.
-      setError(dictationErrorMessage("start-failed"));
+      report("start-failed");
       return;
     }
     recognizerRef.current = recognizer;
@@ -79,12 +84,5 @@ export function useDictation(
     [],
   );
 
-  return {
-    listening,
-    error,
-    toggle: listening ? stop : start,
-    dismissError: () => setError(null),
-    /** Shows a message without starting, for a page that cannot dictate. */
-    report: setError,
-  };
+  return { listening, toggle: listening ? stop : start };
 }

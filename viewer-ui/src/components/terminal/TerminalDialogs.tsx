@@ -35,8 +35,6 @@ export function TerminalDialogs({
           onSend={compose.send}
           onAttachImage={compose.attachImage}
           uploading={compose.uploading}
-          uploadError={compose.uploadError}
-          onDismissUploadError={compose.dismissUploadError}
           onClose={compose.close}
         />
       )}
