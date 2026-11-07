@@ -3,6 +3,14 @@ import { createPortal } from "react-dom";
 import { XIcon } from "../icons/actions";
 import { isSendable, sendChordLabel } from "../../lib/terminal/composeInput";
 import { IMAGE_MIME_TYPES } from "../../lib/terminal/pasteImage";
+import {
+  appendDictation,
+  browserRecognizerFactory,
+  dictationAvailability,
+  type DictationAvailability,
+  type RecognizerFactory,
+} from "../../lib/terminal/dictation";
+import { DictationButton } from "./DictationButton";
 
 const TITLE_ID = "nc-compose-title";
 
@@ -32,6 +40,7 @@ export function ComposeDialog({
   uploadError,
   onDismissUploadError,
   onClose,
+  dictation,
 }: {
   /** Which pane this goes to, said in the title. */
   label: string;
@@ -43,6 +52,8 @@ export function ComposeDialog({
   uploadError: string | null;
   onDismissUploadError: () => void;
   onClose: () => void;
+  /** Voice input, injected by tests; read from the browser otherwise. */
+  dictation?: { availability: DictationAvailability; factory: RecognizerFactory | null };
 }) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const imageRef = useRef<HTMLInputElement>(null);
@@ -50,6 +61,11 @@ export function ComposeDialog({
   const sendable = isSendable(draft);
   const canSend = sendable && !uploading && uploadError === null;
   const chord = sendChordLabel(platform());
+  const [voice] = useState(() => {
+    if (dictation) return dictation;
+    const factory = browserRecognizerFactory();
+    return { availability: dictationAvailability(window.isSecureContext, factory), factory };
+  });
 
   useEffect(() => {
     const field = fieldRef.current;
@@ -145,6 +161,14 @@ export function ComposeDialog({
           >
             Attach image
           </button>
+          <DictationButton
+            availability={voice.availability}
+            factory={voice.factory}
+            onText={(text) => {
+              onChange(appendDictation(draft, text));
+              setFailed(false);
+            }}
+          />
           {uploading && (
             <span role="status" aria-live="polite" className="text-ink-300">
               Uploading image…
