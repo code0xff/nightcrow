@@ -6,6 +6,11 @@ import {
 } from "../../lib/terminal/dictation";
 import { MicIcon } from "../icons/actions";
 
+/** The message form's icon buttons: the toolbar's 16px icon and colours, in a
+ *  square big enough to tap. */
+export const FORM_ICON_BUTTON =
+  "flex h-11 w-11 shrink-0 items-center justify-center rounded-sm hover:text-accent";
+
 /**
  * The message form's voice input. Absent where the browser has no speech
  * recognition; on plain http it stays visible but only explains, since hiding
@@ -36,19 +41,12 @@ export function DictationButton({
         aria-label={
           !ready ? "Voice input needs HTTPS" : listening ? "Stop voice input" : "Voice input"
         }
-        title={ready ? undefined : INSECURE_DICTATION_MESSAGE}
-        className={`flex min-h-11 items-center gap-1.5 rounded-sm border px-3 ${
-          listening
-            ? "border-accent text-accent"
-            : ready
-              ? "border-ink-700 text-ink-200 hover:text-ink-50"
-              : "border-ink-700 text-ink-500"
+        title={ready ? (listening ? "Stop voice input" : "Voice input") : INSECURE_DICTATION_MESSAGE}
+        className={`${FORM_ICON_BUTTON} ${
+          listening ? "animate-pulse text-accent" : ready ? "text-ink-400" : "text-ink-600"
         }`}
       >
         <MicIcon />
-        {/* Visible words are part of each accessible name, so voice control
-            can press it by what it shows. */}
-        {listening ? "Stop" : "Voice"}
       </button>
       {error && (
         <span role="alert" className="flex basis-full items-center gap-2 text-removed">

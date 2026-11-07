@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { XIcon } from "../icons/actions";
+import { ImageIcon, XIcon } from "../icons/actions";
 import { isSendable, sendChordLabel } from "../../lib/terminal/composeInput";
 import { IMAGE_MIME_TYPES } from "../../lib/terminal/pasteImage";
 import {
@@ -10,7 +10,7 @@ import {
   type DictationAvailability,
   type RecognizerFactory,
 } from "../../lib/terminal/dictation";
-import { DictationButton } from "./DictationButton";
+import { DictationButton, FORM_ICON_BUTTON } from "./DictationButton";
 
 const TITLE_ID = "nc-compose-title";
 
@@ -157,9 +157,10 @@ export function ComposeDialog({
             onClick={() => imageRef.current?.click()}
             disabled={uploading}
             aria-label="Attach image"
-            className="min-h-11 rounded-sm border border-ink-700 px-3 text-ink-200 hover:text-ink-50 disabled:text-ink-500"
+            title="Attach image"
+            className={`${FORM_ICON_BUTTON} text-ink-400 disabled:text-ink-600 disabled:hover:text-ink-600`}
           >
-            Attach image
+            <ImageIcon />
           </button>
           <DictationButton
             availability={voice.availability}
@@ -191,30 +192,34 @@ export function ComposeDialog({
               Not connected — nothing was sent.
             </span>
           )}
-          <button
-            type="button"
-            onClick={clear}
-            disabled={draft.length === 0}
-            className="ml-auto min-h-11 rounded-sm px-3 text-ink-200 hover:text-ink-50 disabled:text-ink-600"
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            onClick={send}
-            disabled={!canSend}
-            title={`Send and run (${chord})`}
-            aria-keyshortcuts="Meta+Enter Control+Enter"
-            className="flex min-h-11 items-center gap-1.5 rounded-sm bg-accent px-3 py-1.5 font-medium text-ink-950 disabled:bg-ink-700 disabled:text-ink-400"
-          >
-            {/* On the button rather than only in its tooltip, which a touch
-                screen never shows. Hidden from the accessible name, which stays
-                "Send"; the chord is announced by `aria-keyshortcuts`. */}
-            <kbd aria-hidden="true" className="font-sans opacity-70">
-              {chord}
-            </kbd>
-            Send
-          </button>
+          {/* Together, so a narrow screen wraps them as one group and Send
+              never lands alone on the left. */}
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={clear}
+              disabled={draft.length === 0}
+              className="min-h-11 rounded-sm px-3 text-ink-200 hover:text-ink-50 disabled:text-ink-600"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={send}
+              disabled={!canSend}
+              title={`Send and run (${chord})`}
+              aria-keyshortcuts="Meta+Enter Control+Enter"
+              className="flex min-h-11 items-center gap-1.5 rounded-sm bg-accent px-3 py-1.5 font-medium text-ink-950 disabled:bg-ink-700 disabled:text-ink-400"
+            >
+              {/* On the button rather than only in its tooltip, which a touch
+                  screen never shows. Hidden from the accessible name, which stays
+                  "Send"; the chord is announced by `aria-keyshortcuts`. */}
+              <kbd aria-hidden="true" className="font-sans opacity-70">
+                {chord}
+              </kbd>
+              Send
+            </button>
+          </div>
         </div>
       </div>
     </div>,
