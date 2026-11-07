@@ -25,7 +25,7 @@ import { shownTab } from "../../lib/terminal/paneViewMode";
 import { PanelDivider, type PanelDividerProps } from "./PanelDivider";
 import { PanelToolbar } from "./PanelToolbar";
 import { renderedZoom } from "../../lib/terminal/zoom";
-import { attachLabel, attachStatus } from "../../lib/terminal/attachStatus";
+import { attachStatus } from "../../lib/terminal/attachStatus";
 import { useScreenScale } from "../../hooks/ui/screenScale";
 
 function TerminalPanelView({
@@ -234,7 +234,6 @@ function TerminalPanelView({
         ownsSize={ownsSize}
         maximized={maximized}
         keyBarShown={keyBar.shown}
-        waiting={panes.length > 0 ? attachLabel(status) : null}
         recovery={recovery}
         panes={panes}
         onCancelRecovery={cancelRecovery}
@@ -245,7 +244,7 @@ function TerminalPanelView({
         onToggleMaximized={onToggleMaximized}
       />
       <div className="relative min-h-0 flex-1 overflow-hidden bg-ink-950 p-1">
-        {panes.length === 0 && <AttachNotice status={status} />}
+        <AttachNotice status={status} />
         <PaneGrid
           containerRef={containerRef}
           mode={mode}

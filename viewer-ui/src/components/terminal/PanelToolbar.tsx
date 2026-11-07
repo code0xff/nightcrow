@@ -31,10 +31,6 @@ export interface PanelToolbarProps {
    *  dismissed — and only while there are panes, which is when there is a bar
    *  for it to speak for. */
   keyBarShown: boolean;
-  /** What the panel is still waiting for, if anything. Only set while panes are
-   *  on screen — there the body has no room to say it, and it is exactly then
-   *  that a stale pane looks like a working one (see `AttachNotice`). */
-  waiting: string | null;
   /** Every pane's recovery report, and the panes this page still lists. Reports
    *  for panes it does not — a process that ended while its slot is held for a
    *  relaunch — have no cell to sit in, so they surface here. */
@@ -60,7 +56,6 @@ export function PanelToolbar({
   ownsSize,
   maximized,
   keyBarShown,
-  waiting,
   recovery,
   panes,
   onCancelRecovery,
@@ -88,19 +83,6 @@ export function PanelToolbar({
     "flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-400 hover:text-accent";
   return (
     <div className="flex shrink-0 items-center gap-2 bg-ink-900 px-2 py-1 text-xs">
-      {/* The chip pulses whole, matching `AttachNotice`: the panel says the same
-          thing in two places depending on whether it has panes to show, and a
-          waiting state that pulses in one and sits still in the other reads as
-          two different states. */}
-      {waiting && (
-        <span
-          role="status"
-          className="flex min-w-0 shrink animate-pulse items-center gap-1 rounded-sm bg-ink-800 px-1 text-ink-400"
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-          <span className="truncate">{waiting}</span>
-        </span>
-      )}
       {orphanRecovery(recovery, panes).map((pane) => (
         <RecoveryChip
           key={pane}
