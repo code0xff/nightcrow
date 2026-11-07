@@ -23,6 +23,7 @@ test.afterEach(async () => {
 });
 
 async function openViewer(page: Page, options: ApiMockOptions = {}) {
+  const terminalMessages: string[] = [];
   await page.clock.setFixedTime(FIXED_TIME);
   await page.addInitScript(() => {
     const style = document.createElement("style");
@@ -38,6 +39,7 @@ async function openViewer(page: Page, options: ApiMockOptions = {}) {
   });
   mocks = await installApiMocks(page, { status, ...options });
   await page.routeWebSocket("**/ws/term**", (socket) => {
+    socket.onMessage((message) => terminalMessages.push(message.toString()));
     socket.send(JSON.stringify({ type: "hello", client: 1, panes: 1 }));
     socket.send(JSON.stringify({
       type: "created", pane: 1, rows: 24, cols: 80, client: 1, title: "shell",
@@ -49,6 +51,7 @@ async function openViewer(page: Page, options: ApiMockOptions = {}) {
   if ((page.viewportSize()?.width ?? 0) >= 768)
     await expect(page.locator("[data-terminal-panel] .xterm-screen")).toBeAttached();
   await page.evaluate(() => document.fonts.ready);
+  return terminalMessages;
 }
 
 async function capture(page: Page, name: string) {
@@ -146,6 +149,21 @@ test("a non-repository status is shown in the repository view", async ({ page })
     page.getByText("Not a git repository. Run git init here to track changes.").first(),
   ).toBeVisible();
   await capture(page, "unavailable-repository");
+});
+
+test("the mobile key bar sends Shift+Left to the active terminal", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const terminalMessages = await openViewer(page);
+  await page.getByRole("button", { name: "Terminal" }).click();
+  await expect(page.locator("[data-terminal-panel] .xterm-screen")).toBeAttached();
+
+  await page.getByRole("button", { name: "Shift Left arrow" }).click();
+
+  await expect.poll(() =>
+    terminalMessages
+      .map((raw) => JSON.parse(raw) as { type: string })
+      .filter((message) => message.type === "input"),
+  ).toContainEqual({ type: "input", pane: 1, data: "\x1b[1;2D" });
 });
 
 test("the mobile compose dialog keeps image upload available while uploading", async ({ page }) => {
