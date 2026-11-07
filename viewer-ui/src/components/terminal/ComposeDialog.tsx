@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { XIcon } from "../icons/actions";
+import { ImageIcon, XIcon } from "../icons/actions";
 import { isSendable, sendChordLabel } from "../../lib/terminal/composeInput";
 import { IMAGE_MIME_TYPES } from "../../lib/terminal/pasteImage";
+import {
+  appendDictation,
+  browserRecognizerFactory,
+  dictationAvailability,
+  type DictationAvailability,
+  type RecognizerFactory,
+} from "../../lib/terminal/dictation";
+import { DictationButton, FORM_ICON_BUTTON } from "./DictationButton";
+import { ToastEcho } from "../feedback/ToastEcho";
 
 const TITLE_ID = "nc-compose-title";
 
@@ -29,9 +38,8 @@ export function ComposeDialog({
   onSend,
   onAttachImage,
   uploading,
-  uploadError,
-  onDismissUploadError,
   onClose,
+  dictation,
 }: {
   /** Which pane this goes to, said in the title. */
   label: string;
@@ -40,16 +48,21 @@ export function ComposeDialog({
   onSend: () => boolean;
   onAttachImage: (image: File) => void;
   uploading: boolean;
-  uploadError: string | null;
-  onDismissUploadError: () => void;
   onClose: () => void;
+  /** Voice input, injected by tests; read from the browser otherwise. */
+  dictation?: { availability: DictationAvailability; factory: RecognizerFactory | null };
 }) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const imageRef = useRef<HTMLInputElement>(null);
   const [failed, setFailed] = useState(false);
   const sendable = isSendable(draft);
-  const canSend = sendable && !uploading && uploadError === null;
+  const canSend = sendable && !uploading;
   const chord = sendChordLabel(platform());
+  const [voice] = useState(() => {
+    if (dictation) return dictation;
+    const factory = browserRecognizerFactory();
+    return { availability: dictationAvailability(window.isSecureContext, factory), factory };
+  });
 
   useEffect(() => {
     const field = fieldRef.current;
@@ -90,6 +103,8 @@ export function ComposeDialog({
         className="nc-rise-in flex w-[56rem] max-w-full flex-col rounded-lg border border-ink-700 bg-ink-900"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Upload and microphone errors are toasts, outside this modal. */}
+        <ToastEcho />
         <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-2">
           <span id={TITLE_ID} className="min-w-0 truncate font-medium text-ink-50">
             Send to {label}
@@ -117,10 +132,10 @@ export function ComposeDialog({
               send();
             }
           }}
-          rows={10}
+          rows={8}
           aria-label="message"
           // 16px, not the page's 14: iOS zooms the page into any field smaller.
-          className="m-3 resize-y rounded-sm border border-ink-700 bg-ink-950 p-2 font-mono text-[16px] text-ink-50 focus:border-accent focus:outline-none"
+          className="m-3 resize-none overflow-y-auto rounded-sm border border-ink-700 bg-ink-950 p-2 font-mono text-[16px] text-ink-50 focus:border-accent focus:outline-none"
         />
         <input
           ref={imageRef}
@@ -141,25 +156,22 @@ export function ComposeDialog({
             onClick={() => imageRef.current?.click()}
             disabled={uploading}
             aria-label="Attach image"
-            className="min-h-11 rounded-sm border border-ink-700 px-3 text-ink-200 hover:text-ink-50 disabled:text-ink-500"
+            title="Attach image"
+            className={`${FORM_ICON_BUTTON} text-ink-400 disabled:text-ink-600 disabled:hover:text-ink-600`}
           >
-            Attach image
+            <ImageIcon />
           </button>
+          <DictationButton
+            availability={voice.availability}
+            factory={voice.factory}
+            onText={(text) => {
+              onChange(appendDictation(draft, text));
+              setFailed(false);
+            }}
+          />
           {uploading && (
             <span role="status" aria-live="polite" className="text-ink-300">
               Uploading image…
-            </span>
-          )}
-          {uploadError && (
-            <span role="alert" className="flex basis-full items-center gap-2 text-removed">
-              <span className="min-w-0">{uploadError}</span>
-              <button
-                type="button"
-                onClick={onDismissUploadError}
-                className="min-h-11 shrink-0 rounded-sm px-2 underline"
-              >
-                Dismiss
-              </button>
             </span>
           )}
           {failed && (
@@ -167,30 +179,34 @@ export function ComposeDialog({
               Not connected — nothing was sent.
             </span>
           )}
-          <button
-            type="button"
-            onClick={clear}
-            disabled={draft.length === 0}
-            className="ml-auto min-h-11 rounded-sm px-3 text-ink-200 hover:text-ink-50 disabled:text-ink-600"
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            onClick={send}
-            disabled={!canSend}
-            title={`Send and run (${chord})`}
-            aria-keyshortcuts="Meta+Enter Control+Enter"
-            className="flex min-h-11 items-center gap-1.5 rounded-sm bg-accent px-3 py-1.5 font-medium text-ink-950 disabled:bg-ink-700 disabled:text-ink-400"
-          >
-            {/* On the button rather than only in its tooltip, which a touch
-                screen never shows. Hidden from the accessible name, which stays
-                "Send"; the chord is announced by `aria-keyshortcuts`. */}
-            <kbd aria-hidden="true" className="font-sans opacity-70">
-              {chord}
-            </kbd>
-            Send
-          </button>
+          {/* Together, so a narrow screen wraps them as one group and Send
+              never lands alone on the left. */}
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={clear}
+              disabled={draft.length === 0}
+              className="min-h-11 rounded-sm px-3 text-ink-200 hover:text-ink-50 disabled:text-ink-600"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={send}
+              disabled={!canSend}
+              title={`Send and run (${chord})`}
+              aria-keyshortcuts="Meta+Enter Control+Enter"
+              className="flex min-h-11 items-center gap-1.5 rounded-sm bg-accent px-3 py-1.5 font-medium text-ink-950 disabled:bg-ink-700 disabled:text-ink-400"
+            >
+              {/* On the button rather than only in its tooltip, which a touch
+                  screen never shows. Hidden from the accessible name, which stays
+                  "Send"; the chord is announced by `aria-keyshortcuts`. */}
+              <kbd aria-hidden="true" className="font-sans opacity-70">
+                {chord}
+              </kbd>
+              Send
+            </button>
+          </div>
         </div>
       </div>
     </div>,

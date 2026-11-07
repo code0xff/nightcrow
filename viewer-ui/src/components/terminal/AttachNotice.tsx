@@ -8,6 +8,11 @@ import { attachLabel, type AttachStatus } from "../../lib/terminal/attachStatus"
  * just connected, or was rebuilding its panes after the network dropped, read
  * as a session with no terminal in it.
  *
+ * The same notice sits over panes left on screen while a socket reconnects or
+ * a replay fills the panel, centred as it is in an empty one: there the panes
+ * look live while they are not, and a toolbar chip took the tab strip's room
+ * on a phone.
+ *
  * Startup terminals are the exception: their cells are already on screen saying
  * so (`StartupSlots`), so this adds nothing over them.
  */
@@ -32,7 +37,9 @@ export function AttachNotice({ status }: { status: AttachStatus }) {
       {/* The pulse carries the label, not just the dot beside it: a 6px dot
           breathing in the middle of an empty panel is easy to read as part of
           the layout, and the thing worth noticing is the sentence. */}
-      <span className="flex animate-pulse items-center gap-2 text-caption text-ink-400 uppercase">
+      {/* A soft shade rather than a box, so it reads over a pane's text the
+          same as on an empty panel; a border made it look like a button. */}
+      <span className="flex animate-pulse items-center gap-2 rounded-md bg-ink-950/80 px-3 py-2 text-caption text-ink-400 uppercase">
         <span className="h-1.5 w-1.5 rounded-full bg-accent" />
         {label}
       </span>
