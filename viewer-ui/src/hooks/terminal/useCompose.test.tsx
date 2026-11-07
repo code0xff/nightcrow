@@ -6,8 +6,12 @@ import { useCompose } from "./useCompose";
 import type { PaneView } from "../../lib/terminal/terminalLayout";
 import { MAX_IMAGE_BYTES } from "../../lib/terminal/pasteImage";
 
-const { pasteImage } = vi.hoisted(() => ({ pasteImage: vi.fn() }));
+const { pasteImage, toastError } = vi.hoisted(() => ({
+  pasteImage: vi.fn(),
+  toastError: vi.fn(),
+}));
 vi.mock("../../api", () => ({ api: { pasteImage } }));
+vi.mock("../../lib/runtime/toast", () => ({ toast: { error: toastError } }));
 
 function fakeSocket(open = true) {
   const sent: unknown[] = [];
@@ -160,32 +164,49 @@ describe("useCompose", () => {
     });
   });
 
-  it("retries_a_failed_attachment_before_an_image_only_send", async () => {
+  it("reports_a_failed_attachment_in_a_toast_and_leaves_the_draft_sendable", async () => {
     pasteImage
       .mockRejectedValueOnce(new Error("network unavailable"))
       .mockResolvedValueOnce("/tmp/recovered.png");
     const { result, sent } = mount();
     act(() => result.current.open());
     await act(async () => result.current.attachImage(image()));
-    expect(result.current.uploadError).toMatch(/network unavailable/);
+    expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/network unavailable/));
+    // Nothing reached the draft, so there is still nothing to send.
+    expect(result.current.draft).toBe("");
     expect(result.current.send()).toBe(false);
     expect(sent).toEqual([]);
     await act(async () => result.current.attachImage(image()));
-    expect(result.current.uploadError).toBeNull();
     expect(result.current.draft).toBe("/tmp/recovered.png ");
     expect(result.current.send()).toBe(true);
     expect(sent[0]).toMatchObject({ pane: 7, data: expect.stringContaining("/tmp/recovered.png ") });
+  });
+
+  it("a_failed_attachment_does_not_hold_back_a_typed_message", async () => {
+    pasteImage.mockRejectedValueOnce(new Error("network unavailable"));
+    const { result, sent } = mount();
+    act(() => result.current.open());
+    act(() => result.current.setDraft("look at this"));
+    await act(async () => result.current.attachImage(image()));
+    expect(toastError).toHaveBeenCalled();
+    expect(result.current.uploading).toBe(false);
+    expect(result.current.draft).toBe("look at this");
+    let ok = false;
+    act(() => {
+      ok = result.current.send();
+    });
+    expect(ok).toBe(true);
+    expect(sent[0]).toMatchObject({ pane: 7, data: expect.stringContaining("look at this") });
   });
 
   it("rejects_unsupported_and_oversized_images_before_upload", async () => {
     const { result } = mount();
     act(() => result.current.open());
     await act(async () => result.current.attachImage(image("image/bmp")));
-    expect(result.current.uploadError).toMatch(/PNG, JPEG, GIF, or WebP/);
+    expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/PNG, JPEG, GIF, or WebP/));
     expect(pasteImage).not.toHaveBeenCalled();
-    act(() => result.current.dismissUploadError());
     await act(async () => result.current.attachImage(image("image/png", MAX_IMAGE_BYTES + 1)));
-    expect(result.current.uploadError).toMatch(/10 MiB or smaller/);
+    expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/10 MiB or smaller/));
     expect(pasteImage).not.toHaveBeenCalled();
     pasteImage.mockResolvedValue("/tmp/limit.png");
     await act(async () => result.current.attachImage(image("image/png", MAX_IMAGE_BYTES)));
