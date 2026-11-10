@@ -96,6 +96,10 @@ export function useTerminalViews({
       const term = new Terminal({
         ...font,
         theme: { background: "#111112", foreground: "#f2f2f3" },
+        // An opaque WebGL canvas shows an undefined (often white on Android)
+        // buffer until its first frame; a transparent one shows the dark page
+        // beneath. Every painted cell is still the opaque theme background.
+        allowTransparency: true,
         cursorBlink: true,
         // The IME guard follows xterm's early finalize path, which is skipped
         // when Option is treated as Meta.
