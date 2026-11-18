@@ -44,7 +44,7 @@ exclude = [
 ]
 
 [dependencies]
-ratatui = { version = "0.30", features = ["crossterm"] }
+ratatui = { version = "0.30", features = ["crossterm", "unstable-rendered-line-info"] }
 crossterm = "0.29"
 git2 = { version = "0.21", features = ["vendored-openssl", "vendored-libgit2"] }
 syntect = "5.3"

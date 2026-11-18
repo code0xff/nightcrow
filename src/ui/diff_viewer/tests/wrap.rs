@@ -50,11 +50,18 @@ fn wrapping_folds_a_long_line_onto_several_rows() {
     );
 }
 
-/// With wrapping on the gutter is folded into the body line, because a separate
-/// gutter paragraph would desynchronise the moment a line spans two rows.
 #[test]
-fn wrapping_keeps_the_line_number_on_the_row_the_line_starts_on() {
-    let mut app = app_showing(long_line_hunk(), DiffPaneView::Diff);
+fn wrapping_aligns_continuations_and_keeps_numbers_with_their_lines() {
+    let mut hunk = long_line_hunk();
+    hunk.lines[0].kind = LineKind::Added;
+    hunk.lines[0].old_lineno = None;
+    hunk.lines.push(DiffLine {
+        kind: LineKind::Added,
+        content: "next row".to_string(),
+        old_lineno: None,
+        new_lineno: Some(8),
+    });
+    let mut app = app_showing(hunk, DiffPaneView::Diff);
     app.git.view.diff.wrap = true;
 
     let screen = drawn(&mut app, 40, 10, 0);
@@ -64,17 +71,20 @@ fn wrapping_keeps_the_line_number_on_the_row_the_line_starts_on() {
         .expect("the row the line starts on");
 
     assert!(
-        first.contains('7'),
+        first.contains("7 +alpha"),
         "the number travels with its own line: {first:?}"
     );
     let continuation = screen
         .iter()
         .find(|l| l.contains("juliett") && !l.contains("alpha"))
         .expect("a continuation row");
-    assert!(
-        !continuation.contains('7'),
-        "a continuation row must not be numbered again: {continuation:?}"
+    let body_column = col_of(first, "alpha");
+    assert_eq!(
+        left_columns(continuation, body_column),
+        format!("│{}", " ".repeat(body_column - 1)),
+        "the continuation must leave the gutter and marker columns blank"
     );
+    assert!(screen.iter().any(|row| row.contains("8 +next row")));
 }
 
 #[test]

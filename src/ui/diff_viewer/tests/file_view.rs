@@ -41,6 +41,27 @@ fn file_view_line_numbers_stay_put_when_the_body_scrolls_sideways() {
     );
 }
 
+#[test]
+fn file_view_wraps_wide_text_under_the_body_column() {
+    let mut app = app_with_files(vec!["src/lib.rs"]);
+    app.git.view.mode = ViewMode::Status;
+    app.git.view.diff.view = DiffPaneView::File;
+    app.git.view.diff.wrap = true;
+    app.git.view.diff.file_view.key =
+        Some(crate::app::FileViewKey::Status("src/lib.rs".to_string()));
+    app.git
+        .view
+        .diff
+        .file_view
+        .set_content("start 가나다라마바\nnext row\n".to_string());
+
+    let screen = drawn_file_view(&mut app, 20, 8, 0);
+    let first = screen.iter().find(|row| row.contains("start")).unwrap();
+    let continuation = screen.iter().find(|row| row.contains('가')).unwrap();
+    assert_eq!(col_of(first, "start"), col_of(continuation, "가"));
+    assert!(screen.iter().any(|row| row.contains("2 next row")));
+}
+
 /// The file view reads its own horizontal offset, not `diff.scroll_x`.
 fn drawn_file_view(app: &mut App, width: u16, height: u16, scroll_x: usize) -> Vec<String> {
     app.git.view.diff.file_view.scroll_x = scroll_x;
