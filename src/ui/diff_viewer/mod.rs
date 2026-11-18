@@ -94,10 +94,11 @@ pub fn render(
     // loaded the pane holds only a placeholder message, which has no line to
     // number.
     let digits = digits_for(app.diff_pane().max_line_number() as usize);
+    let wrap = app.diff_pane().wrap;
     let gutter_width = if total_lines == 0 {
         0
     } else {
-        unified_gutter_width(digits)
+        unified_gutter_width(digits) + u16::from(wrap)
     };
 
     let mut lines: Vec<Line> = Vec::with_capacity(visible_height);
@@ -121,8 +122,6 @@ pub fn render(
                 hunk.header.as_str(),
                 Style::default().fg(Color::Cyan),
             )));
-            // Blank, but full width: a header row with no gutter cell would
-            // start its `@@` one column left of the body's left edge.
             gutter_lines.push(Line::from(""));
         }
 
@@ -158,10 +157,19 @@ pub fn render(
                 LineKind::Context => " ",
             };
 
-            let mut spans = vec![Span::styled(
-                prefix,
-                Style::default().fg(Color::DarkGray).bg(bg),
-            )];
+            let gutter_style = Style::default().fg(Color::DarkGray).bg(bg);
+            let number = Span::styled(
+                unified_gutter_text(diff_line.old_lineno, diff_line.new_lineno, digits),
+                gutter_style,
+            );
+            let marker = Span::styled(prefix, gutter_style);
+            let mut spans = Vec::new();
+            if wrap {
+                gutter_lines.push(Line::from(vec![number, marker]));
+            } else {
+                gutter_lines.push(Line::from(number));
+                spans.push(marker);
+            }
 
             // Read from the prebuilt highlight cache; the shape is guaranteed
             // to match `hunks` after `ensure_highlight_cache`, so a mismatch
@@ -186,12 +194,6 @@ pub fn render(
             }
 
             lines.push(Line::from(spans));
-            // Same background as the row so the number reads as part of it
-            // rather than as a column floating beside the highlight.
-            gutter_lines.push(Line::from(Span::styled(
-                unified_gutter_text(diff_line.old_lineno, diff_line.new_lineno, digits),
-                Style::default().fg(Color::DarkGray).bg(bg),
-            )));
         }
     }
 
@@ -239,7 +241,7 @@ pub fn render(
         gutter_lines,
         lines,
         app.diff_pane().scroll_x.min(u16::MAX as usize) as u16,
-        app.diff_pane().wrap,
+        wrap,
     );
 
     if let Some(sa) = search_area {

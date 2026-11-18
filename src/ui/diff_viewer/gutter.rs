@@ -60,9 +60,6 @@ fn lineno_text(no: Option<u32>) -> String {
 /// separate `Paragraph`s because `Paragraph::scroll` shifts the whole line, so
 /// a gutter span in the body's paragraph would slide off the left edge;
 /// vertical scroll is instead expressed by *which* lines the caller collected.
-/// With `wrap` set that split is abandoned: a wrapped body line occupies
-/// several screen rows while its gutter line still occupies one, so the number
-/// is folded into the body line instead, where wrapping carries it along.
 pub(crate) fn render_gutter_and_body(
     frame: &mut Frame,
     inner: Rect,
@@ -73,12 +70,7 @@ pub(crate) fn render_gutter_and_body(
     wrap: bool,
 ) {
     if wrap {
-        frame.render_widget(
-            // `trim: false` keeps a continuation row's leading whitespace, which
-            // in source code is the indentation.
-            Paragraph::new(merge_gutter_into_body(gutter, body)).wrap(Wrap { trim: false }),
-            inner,
-        );
+        render_wrapped_rows(frame, inner, gutter_width, gutter, body);
         return;
     }
     let cols = Layout::default()
@@ -89,18 +81,36 @@ pub(crate) fn render_gutter_and_body(
     frame.render_widget(Paragraph::new(body).scroll((0, scroll_x)), cols[1]);
 }
 
-/// Prepend each gutter line's spans to the body line it belongs to; the two
-/// vectors are built in lockstep by the callers, so index `i` pairs row `i`.
-fn merge_gutter_into_body<'a>(gutter: Vec<Line<'a>>, body: Vec<Line<'a>>) -> Vec<Line<'a>> {
+fn render_wrapped_rows(
+    frame: &mut Frame,
+    inner: Rect,
+    gutter_width: u16,
+    gutter: Vec<Line<'_>>,
+    body: Vec<Line<'_>>,
+) {
     let mut gutter = gutter.into_iter();
-    body.into_iter()
-        .map(|line| match gutter.next() {
-            Some(g) => {
-                let mut spans = g.spans;
-                spans.extend(line.spans);
-                Line::from(spans)
-            }
-            None => line,
-        })
-        .collect()
+    let mut y = inner.top();
+    for line in body {
+        let remaining_height = inner.bottom().saturating_sub(y);
+        if remaining_height == 0 {
+            break;
+        }
+
+        // Headers and placeholders have no gutter contents and use the full width.
+        let number = gutter.next().filter(|line| line.width() > 0);
+        let reserved = if let Some(number) = number {
+            let width = gutter_width.min(inner.width);
+            frame.render_widget(number, Rect::new(inner.x, y, width, 1));
+            width
+        } else {
+            0
+        };
+        let width = inner.width - reserved;
+        let paragraph = Paragraph::new(line).wrap(Wrap { trim: false });
+        let height = paragraph
+            .line_count(width)
+            .clamp(1, usize::from(remaining_height)) as u16;
+        frame.render_widget(paragraph, Rect::new(inner.x + reserved, y, width, height));
+        y += height;
+    }
 }
