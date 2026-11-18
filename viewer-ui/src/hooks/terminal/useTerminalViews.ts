@@ -20,6 +20,7 @@ import type { ScreenScale } from "../ui/screenScale";
 import { createTitleThrottle } from "../../lib/terminal/titleThrottle";
 import type { TitleThrottle } from "../../lib/terminal/titleThrottle";
 import { enableWebglRenderer } from "../../lib/terminal/webglRenderer";
+import { atlasRefreshAddon } from "../../lib/terminal/atlasRefresh";
 import { installImeInputGuard, type ImeInputGuard } from "../../lib/terminal/imeInputGuard";
 import {
   queueTerminalBarrier,
@@ -95,6 +96,10 @@ export function useTerminalViews({
       const term = new Terminal({
         ...font,
         theme: { background: "#111112", foreground: "#f2f2f3" },
+        // An opaque WebGL canvas shows an undefined (often white on Android)
+        // buffer until its first frame; a transparent one shows the dark page
+        // beneath. Every painted cell is still the opaque theme background.
+        allowTransparency: true,
         cursorBlink: true,
         // The IME guard follows xterm's early finalize path, which is skipped
         // when Option is treated as Meta.
@@ -195,6 +200,7 @@ export function useTerminalViews({
       // budget can still afford. `enableWebglRenderer` leaves this pane on the
       // renderer it already has when WebGL is unavailable or later lost.
       enableWebglRenderer(term, () => new WebglAddon());
+      term.loadAddon(atlasRefreshAddon(term));
       // Before a byte is written: what follows was drawn against the PTY's
       // grid. An opened xterm starts at 80×24, and a hidden parser also needs
       // the confirmed grid before it consumes output; parsing at the default

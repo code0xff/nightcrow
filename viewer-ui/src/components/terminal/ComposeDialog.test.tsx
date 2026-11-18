@@ -4,8 +4,17 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { ComposeDialog } from "./ComposeDialog";
+import { dismissToast, subscribeToasts } from "../../lib/runtime/toast";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // Toasts are a module singleton; clear them so one test's errors stay its own.
+  let left: { id: number }[] = [];
+  subscribeToasts((all) => {
+    left = all;
+  })();
+  left.forEach((t) => dismissToast(t.id));
+});
 
 function mount(initial = "", sendResult = true, upload: { busy?: boolean } = {}) {
   const onSend = vi.fn(() => sendResult);
@@ -80,7 +89,9 @@ describe("ComposeDialog", () => {
   it("a_failed_send_says_nothing_went_out", () => {
     mount("hi", false);
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
+    // Said in a toast, echoed inside the dialog for screen readers.
     expect(screen.getByRole("alert").textContent).toMatch(/nothing was sent/);
+    expect(screen.getByRole("alert").closest(".sr-only")).not.toBeNull();
   });
 
   it("escape_closes_the_dialog", () => {
